@@ -31,7 +31,7 @@ extension JamulusAudioEngine {
     let avEngine = AVAudioEngine()
     let inputFormat = avEngine.inputNode.inputFormat(forBus: 0)
     let converter = AVAudioConverter(from: inputFormat, to: stereo48kFormat)
-  
+    var inputMuted = true
     
     /// Audio out source node for our engine. Audio is taken from the network audio ring buffer.
     let audioSource = AVAudioSourceNode(
@@ -87,29 +87,35 @@ extension JamulusAudioEngine {
           let avgPower = 20 * log10(rms)
           inputLevel = avgPower.scaledPower()
         }
-        // Encode and send the audio
-        do {
-          if inputFormat.isValidOpusPCMFormat &&
-              inputFormat.channelCount == stereo48kFormat.channelCount {
-            compressAndSendAudio(buffer: pcmBuffer,
-                      transportProps: audioTransProps,
-                      sendPacket: sendAudioPacket)
-          } else {
-            if let convertedBuffer = AVAudioPCMBuffer(pcmFormat: stereo48kFormat,
-                                                      frameCapacity: pcmBuffer.frameLength) {
-              try converter?.convert(to: convertedBuffer, from: pcmBuffer)
-              self.compressAndSendAudio(buffer: convertedBuffer,
-                             transportProps: audioTransProps,
-                             sendPacket: sendAudioPacket)
+        if inputMuted {
+          sendAudioPacket?(
+            Data(repeating: 0,
+                 count: Int(audioTransProps.opusPacketSize.rawValue))
+          )
+        } else {
+          // Encode and send the audio
+          do {
+            if inputFormat.isValidOpusPCMFormat &&
+                inputFormat.channelCount == stereo48kFormat.channelCount {
+              compressAndSendAudio(buffer: pcmBuffer,
+                                   transportProps: audioTransProps,
+                                   sendPacket: sendAudioPacket)
             } else {
-              throw JamulusError.audioConversionFailed
+              if let convertedBuffer = AVAudioPCMBuffer(pcmFormat: stereo48kFormat,
+                                                        frameCapacity: pcmBuffer.frameLength) {
+                try converter?.convert(to: convertedBuffer, from: pcmBuffer)
+                self.compressAndSendAudio(buffer: convertedBuffer,
+                                          transportProps: audioTransProps,
+                                          sendPacket: sendAudioPacket)
+              } else {
+                throw JamulusError.audioConversionFailed
+              }
             }
+          } catch {
+            print(error)
           }
-        } catch {
-          print(error)
         }
       }
-          
       return noErr
     }
     avEngine.attach(audioSink)
@@ -151,7 +157,7 @@ extension JamulusAudioEngine {
 #endif
       },
       inputLevelPublisher: { vuPublisher.eraseToAnyPublisher() },
-      muteInput: { mute in avEngine.mainMixerNode.volume = mute ? 0 : 1 },
+      muteInput: { inputMuted = $0 },
       start: { transportDetails, sendFunc in
         
         // Set opus bitrate

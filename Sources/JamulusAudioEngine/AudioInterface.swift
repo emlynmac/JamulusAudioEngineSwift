@@ -15,6 +15,7 @@ public struct AudioInterface: Identifiable, Hashable {
   public var id: String
 #endif
   
+  public var audioUnit: AudioUnit?
   public var name: String
   public var inputChannelMap: [UInt32]
   public var inputChannelCount: Int { Int( inputChannelMap.reduce(0, {$0 + $1} )) }
@@ -32,10 +33,13 @@ public struct AudioInterface: Identifiable, Hashable {
   }
   
 #if os(iOS)
-  static func fromAvPortDesc(desc: AVAudioSessionPortDescription) -> Self {
-    .init(id: desc.portName, name: desc.portName,
-          inputChannelMap: desc.channels?.count == 1 ? [0] : [0,1],
-          outputChannelMap: [0, 1]
+  static func fromAvPortDesc(desc: AVAudioSessionPortDescription, au: AudioUnit? = nil) -> Self {
+    .init(
+      id: desc.portName,
+      audioUnit: au,
+      name: desc.portName,
+      inputChannelMap: desc.channels?.count == 1 ? [0] : [0,1],
+      outputChannelMap: [0, 1]
     )
   }
 #endif
@@ -44,17 +48,21 @@ public struct AudioInterface: Identifiable, Hashable {
 
 extension AudioInterface {
 #if os(macOS)
-  static func preview(id: AudioDeviceID) -> Self {
-    .init(id: id, name: "Audio IF",
-          inputChannelMap: [0,1],
-          outputChannelMap: [0,1]
+  static public func preview(id: AudioDeviceID) -> Self {
+    .init(
+      id: id,
+      name: "Audio IF",
+      inputChannelMap: [0,1],
+      outputChannelMap: [0,1]
     )
   }
 #else
-  static func preview(id: Int) -> Self {
-    .init(id: "\(id)", name: "Audio IF",
-          inputChannelMap: [0,1],
-          outputChannelMap: [0,1]
+  static public func preview(id: Int) -> Self {
+    .init(
+      id: "\(id)",
+      name: "Audio IF",
+      inputChannelMap: [0,1],
+      outputChannelMap: [0,1]
     )
   }
 #endif

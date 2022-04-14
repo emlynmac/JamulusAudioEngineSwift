@@ -15,6 +15,7 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
       .package(url: "https://github.com/emlynmac/swift-opus", branch: "jamulus-coders"),
+      .package(url: "https://github.com/emlynmac/jamulusprotocol", branch: "main")
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -22,7 +23,9 @@ let package = Package(
         .target(
             name: "JamulusAudioEngine",
             dependencies: [
-              .product(name: "Opus", package: "swift-opus")]),
+              .product(name: "Opus", package: "swift-opus"),
+              .product(name: "JamulusProtocol", package: "jamulusprotocol")
+            ]),
         .testTarget(
             name: "JamulusAudioEngineTests",
             dependencies: ["JamulusAudioEngine"]),

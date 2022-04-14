@@ -13,7 +13,7 @@ public struct JamulusAudioEngine {
   public var availableInterfaces: () -> [AudioInterface]
   public var setAudioInterface: (AudioInterface) -> Error?
   public var inputLevelPublisher: () -> AnyPublisher<Float, Never>
-  
+  public var muteInput: (Bool) -> Void
   public var start: (AudioTransportDetails, @escaping ((Data) -> Void)) -> JamulusError?
   public var stop: () -> Void
   
@@ -61,6 +61,7 @@ public extension JamulusAudioEngine {
       availableInterfaces: { [] },
       setAudioInterface: { _ in nil},
       inputLevelPublisher: { Just(0.5).eraseToAnyPublisher() },
+      muteInput: { _ in },
       start: { _,_  in nil},
       stop: { },
       handleAudioFromNetwork: { _ in },

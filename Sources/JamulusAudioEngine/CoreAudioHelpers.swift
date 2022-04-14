@@ -14,13 +14,10 @@ func stringValueForAOPA(_ aopa: inout AudioObjectPropertyAddress,
 
 func channelArrayForAOPA(_ aopa: inout AudioObjectPropertyAddress,
                          forId objId: AudioDeviceID) throws -> [UInt32] {
-  var channelArray = [UInt32]()
   var bufferList = AudioBufferList()
   try objectFromAOPA(&aopa, forId: objId, object: &bufferList)
-  for _ in 0..<bufferList.mNumberBuffers {
-    channelArray.append(bufferList.mBuffers.mNumberChannels)
-  }
-  return channelArray
+  let channelCount = bufferList.mBuffers.mNumberChannels
+  return [UInt32](repeating: channelCount, count: Int(bufferList.mNumberBuffers))
 }
 
 func objectFromAOPA<T>(_ aopa: inout AudioObjectPropertyAddress,
@@ -33,7 +30,7 @@ func objectFromAOPA<T>(_ aopa: inout AudioObjectPropertyAddress,
   if expectedSize != propSize {
     print("Mismatch on size of property expectations: expected is \(expectedSize), actual is \(propSize)")
   }
-  assert(expectedSize >= propSize, "Property size from CoreAudio differs from passed value - check the request")
+//  assert(expectedSize >= propSize, "Property size from CoreAudio differs from passed value - check the request")
 #endif
   try throwIfError(AudioObjectGetPropertyData(objId, &aopa, 0, nil,
                                               &propSize, &object))

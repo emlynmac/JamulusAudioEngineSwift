@@ -89,7 +89,7 @@ final class NetworkBuffer {
           // Look at skew and handle appropriately
           if diff < 0 {
             // Out of order packet received, or server sample rate ahead
-            print("Out of sequence by \(diff)")
+            print("Out of sequence packet by \(diff)")
             reset()
           } else if diff >= arrayCount {
             print("Dropped by \(diff)")
@@ -98,7 +98,7 @@ final class NetworkBuffer {
    
           } else { // 0 <= diff < arrayCount
             if diff != 0 {
-              print("Missed packet- diff \(diff)")
+              print("Missed packet(s) - diff \(diff)")
             }
             // Just put the received packet into the array in the correct
             // location based on the sequence number

@@ -54,14 +54,18 @@ extension JamulusAudioEngine {
       if audioTransProps.codec == .opus64 {
         if let buffer = try? opus64?.decode(
           data,
-          sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)) {
+          compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
+          sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
+        ) {
           output.assign(from: buffer.audioBufferList,
                         count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
         }
       } else {
         if let buffer = try? opus?.decode(
           data,
-          sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)) {
+          compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
+          sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
+        ) {
           output.assign(from: buffer.audioBufferList,
                         count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
         }

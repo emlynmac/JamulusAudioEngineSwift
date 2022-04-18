@@ -21,11 +21,18 @@ extension JamulusAudioEngine {
     // Receive Jitter Buffer
     var audioTransProps: AudioTransportDetails = .stereoNormal
     let jitterBuffer = NetworkBuffer(
-      capacity: 17,
+      capacity: ApiConsts.defaultJitterBuffer,
       blockSize: Int(audioTransProps.opusPacketSize.rawValue)
     )
-    var jitterBufferSize: Int { jitterBuffer.count }
-   
+    let underrunPublisher = PassthroughSubject<BufferState, Never>()
+    var bufferState: BufferState = .normal {
+      willSet {
+        if newValue != bufferState {
+          underrunPublisher.send(newValue)
+        }
+      }
+    }
+       
     var sendAudioPacket: ((Data) -> Void)?
     
     let avEngine = AVAudioEngine()
@@ -39,16 +46,10 @@ extension JamulusAudioEngine {
     ) { isSilence, timestamp, frameCount, output in
       
       var data: Data! = jitterBuffer.read()
+      bufferState = jitterBuffer.underrun ? .underrun : .normal
       if data == nil {
         data = Data()
         isSilence.pointee = true
-//        let outPtr = UnsafeMutableAudioBufferListPointer(output)
-//        for frame in 0..<Int(frameCount) {
-//          for bufPtr in outPtr {
-//            let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(bufPtr)
-//            buf[frame] = 0
-//          }
-//        }
       }
       
       if audioTransProps.codec == .opus64 {
@@ -131,6 +132,23 @@ extension JamulusAudioEngine {
     avEngine.connect(audioSource, to: avEngine.mainMixerNode, format: nil)
     avEngine.prepare()
     
+    @discardableResult
+    func setOpusBitrate(audioTransProps: AudioTransportDetails) -> JamulusError? {
+      // Set opus bitrate
+      var err = Opus.Error.ok.rawValue
+      if audioTransProps.codec == .opus64 {
+        err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
+                                value: audioTransProps.bitRatePerSec())
+      } else {
+        err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
+                              value: audioTransProps.bitRatePerSec())
+      }
+      guard err == Opus.Error.ok.rawValue else {
+        return JamulusError.opusError(err)
+      }
+      return nil
+    }
+    
     let audioEngine = JamulusAudioEngine(
       recordingAllowed: {
 #if os(iOS)
@@ -161,23 +179,12 @@ extension JamulusAudioEngine {
 #endif
       },
       inputLevelPublisher: { vuPublisher.eraseToAnyPublisher() },
+      bufferState: { underrunPublisher.eraseToAnyPublisher() },
       muteInput: { inputMuted = $0 },
       start: { transportDetails, sendFunc in
         
-        // Set opus bitrate
-        var err = Opus.Error.ok.rawValue
-        if transportDetails.codec == .opus64 {
-          err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-                                  value: audioTransProps.bitRatePerSec())
-        } else {
-          err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-                                value: audioTransProps.bitRatePerSec())
-        }
-        guard err == Opus.Error.ok.rawValue else {
-          return JamulusError.opusError(err)
-        }
-        
         audioTransProps = transportDetails
+        setOpusBitrate(audioTransProps: audioTransProps)
         sendAudioPacket = sendFunc
         
         do {
@@ -207,10 +214,7 @@ extension JamulusAudioEngine {
         }
       },
       handleAudioFromNetwork: jitterBuffer.write(_:),
-      setNetworkBufferSize: { size in
-        // TODO: update jitter buffers
-        return nil
-      },
+      setNetworkBufferSize: jitterBuffer.resizeTo(newCapacity:),
       setTransportProperties: { transportDetails in
         audioTransProps = transportDetails
         // TODO: apply changes

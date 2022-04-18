@@ -8,17 +8,20 @@ import Opus
 ///
 public struct JamulusAudioEngine {
   
+  /// Whether recording is permitted
   public var recordingAllowed: () -> Bool
+  /// Request permission to record
   public var requestRecordingPermission: (@escaping (Bool) -> Void) -> Void
   public var availableInterfaces: () -> [AudioInterface]
   public var setAudioInterface: (AudioInterface) -> Error?
   public var inputLevelPublisher: () -> AnyPublisher<Float, Never>
+  public var bufferState: () -> AnyPublisher<BufferState , Never>
   public var muteInput: (Bool) -> Void
   public var start: (AudioTransportDetails, @escaping ((Data) -> Void)) -> JamulusError?
   public var stop: () -> Void
   
   public var handleAudioFromNetwork: (Data) -> Void
-  public var setNetworkBufferSize: (Int) -> Error?
+  public var setNetworkBufferSize: (Int) -> Void
   public var setTransportProperties: (AudioTransportDetails) -> JamulusError?
   
   /// The opus instance supporting 128 frame encoding/decoding
@@ -50,6 +53,10 @@ public struct AudioError: Error {
   public init(err: OSStatus) { code = err }
 }
 
+public enum BufferState {
+  case normal
+  case underrun
+}
 
 public extension JamulusAudioEngine {
   
@@ -61,11 +68,12 @@ public extension JamulusAudioEngine {
       availableInterfaces: { [] },
       setAudioInterface: { _ in nil},
       inputLevelPublisher: { Just(0.5).eraseToAnyPublisher() },
+      bufferState: { Just(.normal).eraseToAnyPublisher() },
       muteInput: { _ in },
       start: { _,_  in nil},
       stop: { },
       handleAudioFromNetwork: { _ in },
-      setNetworkBufferSize: { _ in nil },
+      setNetworkBufferSize: { _ in },
       setTransportProperties: { details in nil })
   }
 }

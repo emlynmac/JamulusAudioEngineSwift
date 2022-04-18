@@ -15,7 +15,8 @@ final class NetworkBuffer {
   }
   
   private let kGainBuffers = 2
-  private let queue = DispatchQueue(label: "Receive Queue", qos: .userInteractive)
+  private let queue = DispatchQueue(label: "Receive Buffer Queue",
+                                    qos: .userInteractive)
   
   private var array: [Data?]
   private var chunkSize: Int
@@ -26,7 +27,7 @@ final class NetworkBuffer {
   private var state: State = .empty
   private var optimalBufferLevel: Int
   
-  var count: Int { array.capacity }
+  var underrun: Bool = false
   
   init(capacity: Int,
        blockSize: Int = Int(OpusCompressedSize.stereoNormalDouble.rawValue)) {
@@ -38,7 +39,10 @@ final class NetworkBuffer {
   
   /// Resize the array capacity to a new size
   func resizeTo(newCapacity: Int) {
-    
+    queue.sync {
+      array = [Data?](repeating: nil, count: newCapacity + kGainBuffers + 1)
+      reset()
+    }
   }
   
   func reset() {
@@ -47,7 +51,7 @@ final class NetworkBuffer {
     expectedNextSeq = nil
     validCount = 0
     state = .empty
-    print("Empty; Reset")
+    underrun = false
   }
   
   func write(_ data: Data) -> Void {
@@ -127,11 +131,10 @@ final class NetworkBuffer {
       }
       // Update state
       if state == .empty && validCount >= arrayCount - kGainBuffers {
+        underrun = false
         state = .normal
-        print("Normal")
       } else if state == .normal && validCount >= arrayCount {
         state = .full
-        print("Full")
       }
     }
   }
@@ -155,8 +158,7 @@ final class NetworkBuffer {
       }
       // If read catches write, we don't read
       guard readIndex != writeIndex else {
-        print ("HELP! Read caught Write")
-        reset()
+        underrun = true
         return nil
       }
       

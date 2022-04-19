@@ -54,8 +54,11 @@ public struct AudioError: Error {
 }
 
 public enum BufferState {
+  case empty
   case normal
+  case full
   case underrun
+  case overruns
 }
 
 public extension JamulusAudioEngine {

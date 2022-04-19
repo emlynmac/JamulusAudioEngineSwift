@@ -46,7 +46,7 @@ extension JamulusAudioEngine {
     ) { isSilence, timestamp, frameCount, output in
       
       var data: Data! = jitterBuffer.read()
-      bufferState = jitterBuffer.underrun ? .underrun : .normal
+      bufferState = jitterBuffer.state
       if data == nil {
         data = Data()
         isSilence.pointee = true
@@ -64,7 +64,8 @@ extension JamulusAudioEngine {
       } else {
         if let buffer = try? opus?.decode(
           data,
-          compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
+          compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue *
+                                      UInt32(audioTransProps.blockFactor.rawValue)),
           sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
         ) {
           output.assign(from: buffer.audioBufferList,
@@ -184,6 +185,7 @@ extension JamulusAudioEngine {
       start: { transportDetails, sendFunc in
         
         audioTransProps = transportDetails
+        jitterBuffer.reset()
         setOpusBitrate(audioTransProps: audioTransProps)
         sendAudioPacket = sendFunc
         
@@ -201,7 +203,6 @@ extension JamulusAudioEngine {
         return nil
       },
       stop: {
-        jitterBuffer.reset()
         do {
           avEngine.stop()
 #if !os(macOS)

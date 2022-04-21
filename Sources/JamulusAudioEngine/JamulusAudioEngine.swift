@@ -69,7 +69,7 @@ public extension JamulusAudioEngine {
       recordingAllowed: { true },
       requestRecordingPermission: { $0(true) },
       availableInterfaces: { [] },
-      setAudioInterface: { _ in nil},
+      setAudioInterface: { _ in nil },
       inputLevelPublisher: { Just(0.5).eraseToAnyPublisher() },
       bufferState: { Just(.normal).eraseToAnyPublisher() },
       muteInput: { _ in },

@@ -40,14 +40,16 @@ final class NetworkBuffer {
   
   func read() -> Data? {
     queue.sync {
-      defer {
-        array[readIndex] = nil
-        readIndex += 1
-        
-        if readIndex == array.count { readIndex = 0 }
-        readSeqNum = readSeqNum &+ 1
-      }
-      return array[readIndex]
+      let data = array[readIndex]
+      
+      state = data == nil ? .underrun : .normal
+      array[readIndex] = nil
+      readIndex += 1
+      
+      if readIndex == array.count { readIndex = 0 }
+      readSeqNum = readSeqNum &+ 1
+      
+      return data
     }
   }
   
@@ -78,7 +80,7 @@ final class NetworkBuffer {
             seqNumDiff += 1
           }
           writeIndex = readIndex
-        } else if seqNumDiff >= array.count {
+        } else if seqNumDiff >= arrayCount {
           
           while seqNumDiff >= arrayCount-1 {
             array[readIndex] = nil
@@ -95,6 +97,7 @@ final class NetworkBuffer {
           if writeIndex >= arrayCount { writeIndex -= arrayCount }
         }
         array[writeIndex] = audioData
+        state = .normal
       }
     }
   }

@@ -109,6 +109,12 @@ extension JamulusAudioEngine {
             } else {
               if let convertedBuffer = AVAudioPCMBuffer(pcmFormat: stereo48kFormat,
                                                         frameCapacity: pcmBuffer.frameLength) {
+//                var error: NSError? = nil
+//                let status = try? converter?.convert(to: convertedBuffer, error: &error,
+//                                                     withInputFrom: { packetCount, _ in
+//                  print("converting")
+//                  return pcmBuffer
+//                })
                 try converter?.convert(to: convertedBuffer, from: pcmBuffer)
                 self.compressAndSendAudio(buffer: convertedBuffer,
                                           transportProps: audioTransProps,
@@ -136,7 +142,7 @@ extension JamulusAudioEngine {
     @discardableResult
     func setOpusBitrate(audioTransProps: AudioTransportDetails) -> JamulusError? {
       // Set opus bitrate
-      var err = Opus.Error.ok.rawValue
+      var err = Opus.Error.ok
       if audioTransProps.codec == .opus64 {
         err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
                                 value: audioTransProps.bitRatePerSec())
@@ -144,13 +150,13 @@ extension JamulusAudioEngine {
         err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
                               value: audioTransProps.bitRatePerSec())
       }
-      guard err == Opus.Error.ok.rawValue else {
-        return JamulusError.opusError(err)
+      guard err == Opus.Error.ok else {
+        return JamulusError.opusError(err.rawValue)
       }
       return nil
     }
     
-    let audioEngine = JamulusAudioEngine(
+    return JamulusAudioEngine(
       recordingAllowed: {
 #if os(iOS)
         return avAudSession.recordPermission == .granted
@@ -196,9 +202,7 @@ extension JamulusAudioEngine {
 #endif
           try avEngine.start()
         } catch {
-          print(error)
-          return nil
-          //          return error
+          return JamulusError.avAudioError(error as NSError)
         }
         return nil
       },
@@ -222,11 +226,6 @@ extension JamulusAudioEngine {
         return nil
       }
     )
-    
-    // Post construction config
-    
-    
-    return audioEngine
   }
 }
 

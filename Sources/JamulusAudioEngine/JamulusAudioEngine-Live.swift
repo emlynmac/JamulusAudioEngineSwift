@@ -32,9 +32,10 @@ extension JamulusAudioEngine {
         }
       }
     }
-       
+    
     var sendAudioPacket: ((Data) -> Void)?
     
+    try? configureAvAudio(transProps: audioTransProps)
     let avEngine = AVAudioEngine()
     let inputFormat = avEngine.inputNode.inputFormat(forBus: 0)
     let converter = AVAudioConverter(from: inputFormat, to: stereo48kFormat)
@@ -52,29 +53,41 @@ extension JamulusAudioEngine {
         isSilence.pointee = true
       }
       
+      var buffer: AVAudioPCMBuffer?
       if audioTransProps.codec == .opus64 {
-        if let buffer = try? opus64?.decode(
+        if let buf = try? opus64?.decode(
           data,
           compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
           sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
         ) {
-          output.assign(from: buffer.audioBufferList,
-                        count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
+          buffer = buf
         }
       } else {
-        if let buffer = try? opus?.decode(
+        if let buf = try? opus?.decode(
           data,
           compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue *
                                       UInt32(audioTransProps.blockFactor.rawValue)),
           sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
         ) {
-          output.assign(from: buffer.audioBufferList,
-                        count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
+          buffer = buf
         }
       }
-      
+      if let buffer = buffer {
+        if buffer.frameLength != frameCount {
+          print("expecting \(frameCount) frames to render, got \(buffer.frameLength)")
+          if frameCount < buffer.frameLength {
+            buffer.frameLength = frameCount
+          }
+        }
+        output.assign(from: buffer.audioBufferList,
+                      count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
+      } else {
+        print("Failed to decode data")
+        isSilence.pointee = true
+      }
       return noErr
     }
+    
     avEngine.attach(audioSource)
     let kUpdateInterval: UInt8 = 20
     var counter: UInt8 = 0
@@ -107,14 +120,9 @@ extension JamulusAudioEngine {
                                    transportProps: audioTransProps,
                                    sendPacket: sendAudioPacket)
             } else {
-              if let convertedBuffer = AVAudioPCMBuffer(pcmFormat: stereo48kFormat,
-                                                        frameCapacity: pcmBuffer.frameLength) {
-//                var error: NSError? = nil
-//                let status = try? converter?.convert(to: convertedBuffer, error: &error,
-//                                                     withInputFrom: { packetCount, _ in
-//                  print("converting")
-//                  return pcmBuffer
-//                })
+              if let convertedBuffer = AVAudioPCMBuffer(
+                pcmFormat: stereo48kFormat, frameCapacity: pcmBuffer.frameLength
+              ) {
                 try converter?.convert(to: convertedBuffer, from: pcmBuffer)
                 self.compressAndSendAudio(buffer: convertedBuffer,
                                           transportProps: audioTransProps,
@@ -124,6 +132,7 @@ extension JamulusAudioEngine {
               }
             }
           } catch {
+            print("Input sample rate: \(inputFormat.sampleRate)")
             print(error)
           }
         }
@@ -138,6 +147,11 @@ extension JamulusAudioEngine {
     // Connect the network source to the mixer
     avEngine.connect(audioSource, to: avEngine.mainMixerNode, format: nil)
     avEngine.prepare()
+    
+    //    NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification )
+    //      .sink { notification in
+    //        if notification.userInfo[AVAudioSessionRouteChangedReasonkey]
+    //      }
     
     @discardableResult
     func setOpusBitrate(audioTransProps: AudioTransportDetails) -> JamulusError? {
@@ -191,7 +205,9 @@ extension JamulusAudioEngine {
       start: { transportDetails, sendFunc in
         
         audioTransProps = transportDetails
-        jitterBuffer.reset()
+        jitterBuffer.reset(
+          blockSize: Int(transportDetails.opusPacketSize.rawValue)
+        )
         setOpusBitrate(audioTransProps: audioTransProps)
         sendAudioPacket = sendFunc
         
@@ -219,10 +235,26 @@ extension JamulusAudioEngine {
         }
       },
       handleAudioFromNetwork: jitterBuffer.write(_:),
-      setNetworkBufferSize: jitterBuffer.resizeTo(newCapacity:),
+      setNetworkBufferSize: {
+        jitterBuffer.resizeTo(
+          newCapacity:$0,
+          blockSize: Int(audioTransProps.opusPacketSize.rawValue))
+      },
       setTransportProperties: { transportDetails in
+        let engineActive = avEngine.isRunning
+        do {
+          if transportDetails.opusPacketSize != audioTransProps.opusPacketSize {
+            jitterBuffer.reset(blockSize: Int(transportDetails.opusPacketSize.rawValue))
+          }
+          if transportDetails.codec != audioTransProps.codec {
+            if engineActive { avEngine.pause() }
+            try configureAvAudio(transProps: transportDetails)
+            if engineActive { try avEngine.start() }
+          }
+        } catch {
+          return JamulusError.avAudioError(error as NSError)
+        }
         audioTransProps = transportDetails
-        // TODO: apply changes
         return nil
       }
     )
@@ -239,8 +271,18 @@ func configureAvAudio(transProps: AudioTransportDetails) throws {
     Float64(transProps.blockFactor.frameSize * frameSizeMultiplier) /
     ApiConsts.sampleRate48kHz
   )
-  try avSession.setCategory(.playAndRecord)
-  try avSession.setPreferredSampleRate(Double(ApiConsts.sampleRate48kHz))
+  try avSession.setCategory(
+    .playAndRecord, mode: .measurement,
+    options: [
+      .allowAirPlay,
+      .allowBluetoothA2DP,
+      .duckOthers
+    ]
+  )
+  // Try to set session to 48kHz
+  if avSession.sampleRate != Double(ApiConsts.sampleRate48kHz) {
+    try avSession.setPreferredSampleRate(Double(ApiConsts.sampleRate48kHz))
+  }
   try avSession.setPreferredIOBufferDuration(bufferDuration)
 #endif
 }
@@ -330,7 +372,7 @@ func macOsAudioInterfaces() -> [AudioInterface] {
 
 
 func setMacOsAudioInterface(interface: AudioInterface) -> Error? {
- 
+  
   return nil
 }
 

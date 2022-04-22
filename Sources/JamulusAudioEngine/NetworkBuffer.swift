@@ -23,15 +23,15 @@ final class NetworkBuffer {
     self.blockSize = blockSize
   }
   
-  func resizeTo(newCapacity: Int) {
-    guard newCapacity != array.count else { return }
+  func resizeTo(newCapacity: Int, blockSize: Int) {
     queue.sync {
       array = [Data?](repeating: nil, count: newCapacity)
-      reset()
+      reset(blockSize: blockSize)
     }
   }
   
-  func reset() {
+  func reset(blockSize: Int) {
+    self.blockSize = blockSize
     readSeqNum = 0
     readIndex = 0
     writeIndex = 0
@@ -63,6 +63,8 @@ final class NetworkBuffer {
       let packetSize = lastByteIsSequence ? blockSize+1 : blockSize
       
       for startIdx in stride(from: 0, to: data.count, by: packetSize) {
+        guard startIdx + blockSize < data.count else { break }
+        
         let seqNum = data[startIdx + blockSize]
         let audioData = data[startIdx..<(startIdx+blockSize)]
         

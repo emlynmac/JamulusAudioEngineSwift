@@ -130,4 +130,16 @@ func getStreamFormatFor(id: AudioStreamID,
   try objectFromAOPA(&aopa, forId: id, object: &streamDescription)
 }
 
+func setBufferFrameSize(for au: AudioUnit?, to size: inout UInt32) -> OSStatus {
+  guard let unit = au else { return noErr }
+  
+  return AudioUnitSetProperty(
+    unit,
+    kAudioDevicePropertyBufferFrameSize,
+    kAudioUnitScope_Global,
+    0,
+    &size,
+    UInt32(MemoryLayout.size(ofValue: size))
+  )
+}
 #endif

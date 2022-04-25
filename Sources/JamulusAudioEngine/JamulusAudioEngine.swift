@@ -12,22 +12,39 @@ public struct JamulusAudioEngine {
   public var recordingAllowed: () -> Bool
   /// Request permission to record
   public var requestRecordingPermission: (@escaping (Bool) -> Void) -> Void
+  
+  /// Provide the list of available audio interfaces and their capabilities
   public var availableInterfaces: () -> [AudioInterface]
-  public var setAudioInterface: (AudioInterface) -> Error?
-  public var inputLevelPublisher: () -> AnyPublisher<Float, Never>
+  /// Set the input interface to use
+  /// First parameter is the interface to use, second is the channel mapping to use for L/R
+  public var setAudioInputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
+  /// Set the output interface to use
+  /// First parameter is the interface to use, second is the channel mapping to use for L/R
+  public var setAudioOutputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
+  
+  /// Provides the UI with a value to use on a VU meter
+  public var inputLevelPublisher: () -> AnyPublisher<[Float], Never>
+  /// State of the network receive buffer
   public var bufferState: () -> AnyPublisher<BufferState , Never>
+  /// Mute the input
   public var muteInput: (Bool) -> Void
+  /// Start the audio engine
   public var start: (AudioTransportDetails, @escaping ((Data) -> Void)) -> JamulusError?
+  /// Stop the audio engine
   public var stop: () -> Void
   
+  /// Input for network Opus packet data
   public var handleAudioFromNetwork: (Data) -> Void
+  /// Set the network receive jitter buffer size in terms of number of packets
   public var setNetworkBufferSize: (Int) -> Void
+  /// Set the engine transport details
   public var setTransportProperties: (AudioTransportDetails) -> JamulusError?
+  
   
   /// The opus instance supporting 128 frame encoding/decoding
   static var opus: Opus.Custom! = {
     let opus = try? Opus.Custom(
-      format: stereo48kFormat,
+      format: opus48kFormat,
       application: .audio,
       frameSize: UInt32(2 * ApiConsts.frameSamples64))
     try? opus?.configureForJamulus()
@@ -37,7 +54,7 @@ public struct JamulusAudioEngine {
   /// The opus instance supporting 64 frame encoding/decoding
   static var opus64: Opus.Custom! = {
     let opus = try? Opus.Custom(
-      format: stereo48kFormat,
+      format: opus48kFormat,
       application: .audio,
       frameSize: UInt32(ApiConsts.frameSamples64))
     try? opus?.configureForJamulus()
@@ -69,8 +86,9 @@ public extension JamulusAudioEngine {
       recordingAllowed: { true },
       requestRecordingPermission: { $0(true) },
       availableInterfaces: { [] },
-      setAudioInterface: { _ in nil },
-      inputLevelPublisher: { Just(0.5).eraseToAnyPublisher() },
+      setAudioInputInterface: { _, _ in },
+      setAudioOutputInterface: { _, _ in },
+      inputLevelPublisher: { Just([0.5,0.4]).eraseToAnyPublisher() },
       bufferState: { Just(.normal).eraseToAnyPublisher() },
       muteInput: { _ in },
       start: { _,_  in nil},
@@ -81,15 +99,15 @@ public extension JamulusAudioEngine {
   }
 }
 
-/// The audio format needed for Opus to work properly for Jamulus
-let stereo48kFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                    sampleRate: 48000,
-                                    channels: AVAudioChannelCount(2),
-                                    interleaved: true)!
+/// Jamulus uses 48k sample rate and the opus encoder needs an interleaved 2 channel format
+let opus48kFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                  sampleRate: 48000,
+                                  channels: AVAudioChannelCount(2),
+                                  interleaved: true)!
 let sampleRate48kHz = Float64(48000)
 
+
 extension JamulusAudioEngine {
-  
   ///
   /// Sends an AVAudioPCMBuffer through the Opus compressor and calls
   /// the closure to send the compressed data over the network

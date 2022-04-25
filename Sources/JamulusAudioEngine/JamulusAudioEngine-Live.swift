@@ -215,13 +215,13 @@ extension JamulusAudioEngine {
         do {
 #if os(iOS)
           try avAudSession.setActive(true, options: .notifyOthersOnDeactivation)
-          try configureAvAudio(transProps: audioTransProps)
           try setIosAudioInterface(interface: inputInterface, session: avAudSession)
+          try configureAvAudio(transProps: audioTransProps)
 #elseif os(macOS)
-          try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
           try setMacOsAudioInterfaces(input: inputInterface,
                                       output: outputInterface,
                                       avEngine: avEngine)
+          try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
 #endif
           try avEngine.start()
         } catch {
@@ -407,27 +407,6 @@ func macOsAudioInterfaces() -> [AudioInterface] {
 func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
                              output: AudioInterface.InterfaceSelection,
                              avEngine: AVAudioEngine) throws {
-  if let outUnit = avEngine.outputNode.audioUnit {
-    try throwIfError(AudioUnitInitialize(outUnit))
-    switch output {
-    case .specific(let id):
-      var outputId: AudioDeviceID = id
-      try throwIfError(
-        AudioUnitSetProperty(
-          outUnit,
-          kAudioOutputUnitProperty_CurrentDevice,
-          kAudioUnitScope_Global,
-          0,
-          &outputId,
-          UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-      )
-      
-    case .systemDefault:
-      // How?
-      break
-    }
-  }
   if let inUnit = avEngine.inputNode.audioUnit {
     try throwIfError(AudioUnitInitialize(inUnit))
     
@@ -445,6 +424,27 @@ func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
           UInt32(MemoryLayout<AudioDeviceID>.size)
         )
       )
+    case .systemDefault:
+      // How?
+      break
+    }
+  }
+  if let outUnit = avEngine.outputNode.audioUnit {
+    try throwIfError(AudioUnitInitialize(outUnit))
+    switch output {
+    case .specific(let id):
+      var outputId: AudioDeviceID = id
+      try throwIfError(
+        AudioUnitSetProperty(
+          outUnit,
+          kAudioOutputUnitProperty_CurrentDevice,
+          kAudioUnitScope_Global,
+          0,
+          &outputId,
+          UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+      )
+      
     case .systemDefault:
       // How?
       break

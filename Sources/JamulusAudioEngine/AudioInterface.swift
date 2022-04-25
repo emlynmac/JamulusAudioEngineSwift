@@ -47,8 +47,8 @@ public struct AudioInterface: Identifiable, Hashable {
       id: desc.portName,
       audioUnit: au,
       name: desc.portName,
-      inputChannelMap: desc.channels?.count == 1 ? [0] : [0,1],
-      outputChannelMap: [0, 1]
+      inputChannelMap: desc.channels?.count == nil ? [2] : [UInt32(desc.channels!.count)],
+      outputChannelMap: []
     )
   }
 #endif

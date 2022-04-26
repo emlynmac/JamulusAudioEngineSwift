@@ -1,3 +1,4 @@
+
 import AudioToolbox
 import CoreAudio
 
@@ -50,10 +51,10 @@ func arrayFromAOPA<T>(_ aopa: inout AudioObjectPropertyAddress,
 }
 
 func throwIfError(_ err: OSStatus) throws {
-  if err != kAudioCodecNoError {
+  if err != noErr {
     var errBigEndian = err.bigEndian
     let error = Data(bytes: &errBigEndian, count: MemoryLayout<OSStatus>.size)
-    print("CoreAudio error: \(String(data: error, encoding: .ascii)!)")
+    print("CoreAudio error \(err) (\(String(data: error, encoding: .ascii)!))")
     
     throw AudioError.init(err: err)
   }
@@ -142,4 +143,42 @@ func setBufferFrameSize(for au: AudioUnit?, to size: inout UInt32) -> OSStatus {
     UInt32(MemoryLayout.size(ofValue: size))
   )
 }
+
+func getSystemAudioDeviceId(forInput: Bool) throws -> AudioDeviceID {
+  var aopa = AudioObjectPropertyAddress(
+    mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+    mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain
+  )
+  var deviceId: AudioObjectID = 0
+  
+  if forInput {
+    aopa.mSelector = kAudioHardwarePropertyDefaultInputDevice
+  }
+  var propertySize: UInt32 = UInt32(MemoryLayout.size(ofValue: deviceId))
+  try throwIfError(
+    AudioObjectGetPropertyData(
+      AudioObjectID(kAudioObjectSystemObject),
+      &aopa, 0, nil,
+      &propertySize, &deviceId
+    )
+  )
+  return deviceId
+}
+
+func setAudioDevice(id: AudioDeviceID, forAU audioUnit: AudioUnit) throws {
+  var id = id
+  
+  try throwIfError(
+    AudioUnitSetProperty(
+    audioUnit,
+      kAudioOutputUnitProperty_CurrentDevice,
+      kAudioUnitScope_Global,
+      0,
+      &id,
+      UInt32(MemoryLayout<AudioDeviceID>.size)
+    )
+  )
+}
+
 #endif

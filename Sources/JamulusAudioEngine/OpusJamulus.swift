@@ -1,9 +1,3 @@
-//
-//  OpusJamulus.swift
-//  Jam It Up
-//
-//  Created by Emlyn Bolton on 2022-03-21.
-//
 
 import JamulusProtocol
 import Opus

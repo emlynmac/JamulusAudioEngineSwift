@@ -1,3 +1,4 @@
+
 import AVFoundation
 import Combine
 import Foundation
@@ -101,47 +102,68 @@ extension JamulusAudioEngine {
     let audioSink = AVAudioSinkNode { timestamp, frameCount, pcmBuffers in
       counter = counter &+ 1
       
-      if let pcmBuffer = AVAudioPCMBuffer(
-        pcmFormat: inputFormat,
-        bufferListNoCopy: pcmBuffers) {
+      var pcmBuffer: AVAudioPCMBuffer?
+  
+      if inputMuted {
+        if let empty = AVAudioPCMBuffer(pcmFormat: inputFormat,
+                                        frameCapacity: frameCount) {
+          empty.frameLength = empty.frameCapacity
+          for ch in 0..<inputFormat.channelCount {
+            memset(
+              empty.floatChannelData![Int(ch)], 0,
+              Int(empty.frameLength *
+                  inputFormat.streamDescription.pointee.mBytesPerFrame)
+            )
+          }
+          pcmBuffer = empty
+        }
+      } else {
+        pcmBuffer = AVAudioPCMBuffer(
+          pcmFormat: inputFormat,
+          bufferListNoCopy: pcmBuffers)
         
         if counter % kUpdateInterval == 0 {
           // Update the signal VU meter
-          let rms = pcmBuffer.rmsPower
-          // Convert to decibels
-          let avgPower = 20 * log10(rms)
-          inputLevels = [avgPower.scaledPower()]
-        }
-        if inputMuted {
-          sendAudioPacket?(
-            Data(repeating: 0,
-                 count: Int(audioTransProps.opusPacketSize.rawValue))
-          )
-        } else {
-          // Encode and send the audio
-          do {
-            if inputFormat.isValidOpusPCMFormat &&
-                inputFormat.channelCount == opus48kFormat.channelCount {
-              compressAndSendAudio(buffer: pcmBuffer,
-                                   transportProps: audioTransProps,
-                                   sendPacket: sendAudioPacket)
-            } else {
-              if let convertedBuffer = AVAudioPCMBuffer(
-                pcmFormat: opus48kFormat, frameCapacity: pcmBuffer.frameLength
-              ) {
-                try converter?.convert(to: convertedBuffer, from: pcmBuffer)
-                self.compressAndSendAudio(buffer: convertedBuffer,
-                                          transportProps: audioTransProps,
-                                          sendPacket: sendAudioPacket)
-              } else {
-                throw JamulusError.audioConversionFailed
-              }
-            }
-          } catch {
-            print("Input sample rate: \(inputFormat.sampleRate)")
-            print(error)
+          if let rms = pcmBuffer?.rmsPower {
+            // Convert to decibels
+            let avgPower = 20 * log10(rms)
+            inputLevels = [avgPower.scaledPower()]
           }
         }
+      }
+      
+      guard let buffer = pcmBuffer else {
+        // This has audio artifacts
+        sendAudioPacket?(
+          Data(repeating: 0,
+               count: Int(audioTransProps.opusPacketSize.rawValue))
+        )
+        print("COULD NOT CREATE AUDIO")
+        return noErr
+      }
+      
+      // Encode and send the audio
+      do {
+        if inputFormat.isValidOpusPCMFormat &&
+            inputFormat.channelCount == opus48kFormat.channelCount {
+          compressAndSendAudio(buffer: buffer,
+                               transportProps: audioTransProps,
+                               sendPacket: sendAudioPacket)
+        } else {
+          if let convertedBuffer = AVAudioPCMBuffer(
+            pcmFormat: opus48kFormat, frameCapacity: buffer.frameLength
+          ) {
+            try converter?.convert(to: convertedBuffer, from: buffer)
+            self.compressAndSendAudio(buffer: convertedBuffer,
+                                      transportProps: audioTransProps,
+                                      sendPacket: sendAudioPacket)
+          } else {
+            throw JamulusError.audioConversionFailed
+          }
+        }
+      } catch {
+        print("Input sample rate: \(inputFormat.sampleRate)")
+        print(error)
       }
       return noErr
     }
@@ -260,7 +282,7 @@ extension JamulusAudioEngine {
 #if os(iOS)
             try configureAvAudio(transProps: transportDetails)
 #elseif os(macOS)
-            try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
+            try configureAudio(audioTransProps: transportDetails, avEngine: avEngine)
 #endif
             if engineActive { try avEngine.start() }
           }
@@ -408,48 +430,27 @@ func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
                              output: AudioInterface.InterfaceSelection,
                              avEngine: AVAudioEngine) throws {
   if let inUnit = avEngine.inputNode.audioUnit {
-    try throwIfError(AudioUnitInitialize(inUnit))
-    
     switch input {
     case .specific(let id):
-      var inputId: AudioDeviceID = id
-      
-      try throwIfError(
-        AudioUnitSetProperty(
-          inUnit,
-          kAudioOutputUnitProperty_CurrentDevice,
-          kAudioUnitScope_Global,
-          0,
-          &inputId,
-          UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-      )
+      try setAudioDevice(id: id, forAU: inUnit)
+     
     case .systemDefault:
-      // How?
-      break
+      let systemId = try getSystemAudioDeviceId(forInput: true)
+      try setAudioDevice(id: systemId, forAU: inUnit)
     }
   }
-  if let outUnit = avEngine.outputNode.audioUnit {
-    try throwIfError(AudioUnitInitialize(outUnit))
-    switch output {
-    case .specific(let id):
-      var outputId: AudioDeviceID = id
-      try throwIfError(
-        AudioUnitSetProperty(
-          outUnit,
-          kAudioOutputUnitProperty_CurrentDevice,
-          kAudioUnitScope_Global,
-          0,
-          &outputId,
-          UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-      )
-      
-    case .systemDefault:
-      // How?
-      break
-    }
-  }
+//  if let outUnit = avEngine.outputNode.audioUnit {
+//    try throwIfError(AudioUnitInitialize(outUnit))
+//    switch output {
+//    case .specific(let id):
+//      try setAudioDevice(id: id, forAU: outUnit)
+//      
+//    case .systemDefault:
+//      let systemId = try getSystemAudioDeviceId(forInput: false)
+//      try setAudioDevice(id: systemId, forAU: outUnit)
+//      break
+//    }
+//  }
 }
 
 #endif

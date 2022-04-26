@@ -48,54 +48,14 @@ extension JamulusAudioEngine {
     let converter = AVAudioConverter(from: inputFormat, to: opus48kFormat)
     var inputMuted = true
     
-    /// Audio out source node for our engine. Audio is taken from the network audio ring buffer.
-    let audioSource = AVAudioSourceNode(
-      format: opus48kFormat
-    ) { isSilence, timestamp, frameCount, output in
-      
-      var data: Data! = jitterBuffer.read()
-      bufferState = jitterBuffer.state
-      if data == nil {
-        data = Data()
-        isSilence.pointee = true
-      }
-      
-      var buffer: AVAudioPCMBuffer?
-      if audioTransProps.codec == .opus64 {
-        if let buf = try? opus64?.decode(
-          data,
-          compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
-          sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
-        ) {
-          buffer = buf
-        }
-      } else {
-        if let buf = try? opus?.decode(
-          data,
-          compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue *
-                                      UInt32(audioTransProps.blockFactor.rawValue)),
-          sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
-        ) {
-          buffer = buf
-        }
-      }
-      if let buffer = buffer {
-        if buffer.frameLength != frameCount {
-          print("expecting \(frameCount) frames to render, got \(buffer.frameLength)")
-          if frameCount < buffer.frameLength {
-            buffer.frameLength = frameCount
-          }
-        }
-        output.assign(from: buffer.audioBufferList,
-                      count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
-      } else {
-        print("Failed to decode data")
-        isSilence.pointee = true
-      }
-      return noErr
-    }
-    
+    let audioSource = audioSourceNode(
+      dataSource: { jitterBuffer },
+      transportDetails: { audioTransProps },
+      updateBufferState: { bufferState = $0 },
+      opus: opus, opus64: opus64, avEngine: avEngine
+    )
     avEngine.attach(audioSource)
+    
     let kUpdateInterval: UInt8 = 20
     var counter: UInt8 = 0
     /// Audio input source node. Sends PCM buffers to opus and the network
@@ -105,22 +65,32 @@ extension JamulusAudioEngine {
       var pcmBuffer: AVAudioPCMBuffer?
   
       if inputMuted {
-        if let empty = AVAudioPCMBuffer(pcmFormat: inputFormat,
-                                        frameCapacity: frameCount) {
-          empty.frameLength = empty.frameCapacity
-          for ch in 0..<inputFormat.channelCount {
-            memset(
-              empty.floatChannelData![Int(ch)], 0,
-              Int(empty.frameLength *
-                  inputFormat.streamDescription.pointee.mBytesPerFrame)
-            )
-          }
-          pcmBuffer = empty
-        }
+        // Send dummy packet or the server thinks we died
+        sendAudioPacket?(
+          Data(repeating: 0,
+               count: Int(audioTransProps.opusPacketSize.rawValue))
+        )
+        return noErr
+        
+        // TODO: this is causing feedback to the out for some reason.
+//        if let empty = AVAudioPCMBuffer(pcmFormat: opus48kFormat,
+//                                        frameCapacity: frameCount) {
+//          empty.frameLength = empty.frameCapacity
+//          for ch in 0..<inputFormat.channelCount {
+//            memset(
+//              empty.floatChannelData![Int(ch)], 0,
+//              Int(empty.frameLength *
+//                  opus48kFormat.streamDescription.pointee.mBytesPerFrame
+//                 )
+//            )
+//          }
+//          pcmBuffer = empty
+//        }
       } else {
         pcmBuffer = AVAudioPCMBuffer(
           pcmFormat: inputFormat,
-          bufferListNoCopy: pcmBuffers)
+          bufferListNoCopy: pcmBuffers
+        )
         
         if counter % kUpdateInterval == 0 {
           // Update the signal VU meter
@@ -133,7 +103,7 @@ extension JamulusAudioEngine {
       }
       
       guard let buffer = pcmBuffer else {
-        // This has audio artifacts
+        // Send dummy packet or the server thinks we died
         sendAudioPacket?(
           Data(repeating: 0,
                count: Int(audioTransProps.opusPacketSize.rawValue))
@@ -144,16 +114,26 @@ extension JamulusAudioEngine {
       
       // Encode and send the audio
       do {
-        if inputFormat.isValidOpusPCMFormat &&
-            inputFormat.channelCount == opus48kFormat.channelCount {
+        if buffer.format.isValidOpusPCMFormat &&
+            buffer.format.channelCount == opus48kFormat.channelCount {
           compressAndSendAudio(buffer: buffer,
                                transportProps: audioTransProps,
                                sendPacket: sendAudioPacket)
         } else {
+          let frameRatio = opus48kFormat.sampleRate / inputFormat.sampleRate
           if let convertedBuffer = AVAudioPCMBuffer(
-            pcmFormat: opus48kFormat, frameCapacity: buffer.frameLength
+            pcmFormat: opus48kFormat,
+            frameCapacity: UInt32(Double(buffer.frameLength) * frameRatio)
           ) {
-            try converter?.convert(to: convertedBuffer, from: buffer)
+            var error: NSError? = nil
+            
+            converter?.convert(
+              to: convertedBuffer, error: &error,
+              withInputFrom: { _, status in
+                status.pointee = .haveData
+                return buffer
+            })
+
             self.compressAndSendAudio(buffer: convertedBuffer,
                                       transportProps: audioTransProps,
                                       sendPacket: sendAudioPacket)
@@ -162,8 +142,12 @@ extension JamulusAudioEngine {
           }
         }
       } catch {
-        print("Input sample rate: \(inputFormat.sampleRate)")
         print(error)
+        // Send dummy packet or the server thinks we died
+        sendAudioPacket?(
+          Data(repeating: 0,
+               count: Int(audioTransProps.opusPacketSize.rawValue))
+        )
       }
       return noErr
     }
@@ -171,9 +155,11 @@ extension JamulusAudioEngine {
     
     // Connect nodes
     // Connect the input to the sink
-    avEngine.connect(avEngine.inputNode, to: audioSink, format: nil)
-    // Connect the network source to the mixer
-    avEngine.connect(audioSource, to: avEngine.mainMixerNode, format: nil)
+    avEngine.connect(avEngine.inputNode, to: audioSink, fromBus: 0, toBus: 0, format: nil)
+    
+    // Connect the network source to the output
+    avEngine.mainMixerNode.outputVolume = 0
+    avEngine.connect(audioSource, to: avEngine.outputNode, format: nil)
     avEngine.prepare()
     
     //    NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification )
@@ -454,3 +440,82 @@ func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
 }
 
 #endif
+
+/// Audio out source node for our engine.
+/// This needs to be re-initialized if the output node changes its format
+func audioSourceNode(
+  dataSource: @escaping () -> NetworkBuffer,
+  transportDetails: @escaping () -> AudioTransportDetails,
+  updateBufferState: @escaping (BufferState) -> Void,
+  opus: Opus.Custom?,
+  opus64: Opus.Custom?,
+  avEngine: AVAudioEngine
+) -> AVAudioSourceNode {
+  let outputFormat = avEngine.outputNode.outputFormat(forBus: 0)
+  let frameRatio = outputFormat.sampleRate / opus48kFormat.sampleRate
+  
+  var converter: AVAudioConverter?
+  if outputFormat != opus48kFormat {
+    converter = AVAudioConverter(from: opus48kFormat, to: outputFormat)
+  }
+  
+  return AVAudioSourceNode(
+    format: opus48kFormat
+  ) { isSilence, timestamp, frameCount, output in
+    let audioTransProps = transportDetails()
+    let netBuf = dataSource()
+    
+    var data: Data! = netBuf.read()
+    updateBufferState(netBuf.state)
+    
+    if data == nil {
+      data = Data()
+      isSilence.pointee = true
+    }
+    
+    var buffer: AVAudioPCMBuffer?
+    if audioTransProps.codec == .opus64 {
+      if let buf = try? opus64?.decode(
+        data,
+        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
+        sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
+      ) {
+        buffer = buf
+      }
+    } else {
+      if let buf = try? opus?.decode(
+        data,
+        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue *
+                                    UInt32(audioTransProps.blockFactor.rawValue)),
+        sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
+      ) {
+        buffer = buf
+      }
+    }
+    
+    if let buffer = buffer {
+      let reSampleFrameCount = UInt32(Double(buffer.frameLength) * frameRatio)
+      // Requires some form of conversion
+      if frameCount == reSampleFrameCount,
+         let audioConverter = converter,
+         let convertedBuffer = AVAudioPCMBuffer(
+          pcmFormat: opus48kFormat,
+          frameCapacity: frameCount
+         ) {
+        var error: NSError? = nil
+        audioConverter.convert(to: convertedBuffer, error: &error) { _, status in
+          status.pointee = .haveData
+          return buffer
+        }
+        output.assign(from: convertedBuffer.audioBufferList,
+                      count: Int(convertedBuffer.audioBufferList.pointee.mNumberBuffers))
+      } else {
+        output.assign(from: buffer.audioBufferList,
+                      count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
+      }
+    } else {
+      isSilence.pointee = true
+    }
+    return noErr
+  }
+}

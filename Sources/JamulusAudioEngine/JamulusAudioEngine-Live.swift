@@ -415,16 +415,16 @@ func macOsAudioInterfaces() -> [AudioInterface] {
 func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
                              output: AudioInterface.InterfaceSelection,
                              avEngine: AVAudioEngine) throws {
-  if let inUnit = avEngine.inputNode.audioUnit {
-    switch input {
-    case .specific(let id):
-      try setAudioDevice(id: id, forAU: inUnit)
-     
-    case .systemDefault:
-      let systemId = try getSystemAudioDeviceId(forInput: true)
-      try setAudioDevice(id: systemId, forAU: inUnit)
-    }
-  }
+//  if let inUnit = avEngine.inputNode.audioUnit {
+//    switch input {
+//    case .specific(let id):
+//      try setAudioDevice(id: id, forAU: inUnit)
+//     
+//    case .systemDefault:
+//      let systemId = try getSystemAudioDeviceId(forInput: true)
+//      try setAudioDevice(id: systemId, forAU: inUnit)
+//    }
+//  }
 //  if let outUnit = avEngine.outputNode.audioUnit {
 //    try throwIfError(AudioUnitInitialize(outUnit))
 //    switch output {

@@ -56,53 +56,17 @@ extension JamulusAudioEngine {
     )
     avEngine.attach(audioSource)
     
-    let kUpdateInterval: UInt8 = 20
+    let kUpdateInterval: UInt8 = 50
     var counter: UInt8 = 0
+
     /// Audio input source node. Sends PCM buffers to opus and the network
     let audioSink = AVAudioSinkNode { timestamp, frameCount, pcmBuffers in
       counter = counter &+ 1
       
-      var pcmBuffer: AVAudioPCMBuffer?
-  
-      if inputMuted {
-        // Send dummy packet or the server thinks we died
-        sendAudioPacket?(
-          Data(repeating: 0,
-               count: Int(audioTransProps.opusPacketSize.rawValue))
-        )
-        return noErr
-        
-        // TODO: this is causing feedback to the out for some reason.
-//        if let empty = AVAudioPCMBuffer(pcmFormat: opus48kFormat,
-//                                        frameCapacity: frameCount) {
-//          empty.frameLength = empty.frameCapacity
-//          for ch in 0..<inputFormat.channelCount {
-//            memset(
-//              empty.floatChannelData![Int(ch)], 0,
-//              Int(empty.frameLength *
-//                  opus48kFormat.streamDescription.pointee.mBytesPerFrame
-//                 )
-//            )
-//          }
-//          pcmBuffer = empty
-//        }
-      } else {
-        pcmBuffer = AVAudioPCMBuffer(
-          pcmFormat: inputFormat,
-          bufferListNoCopy: pcmBuffers
-        )
-        
-        if counter % kUpdateInterval == 0 {
-          // Update the signal VU meter
-          if let rms = pcmBuffer?.rmsPower {
-            // Convert to decibels
-            let avgPower = 20 * log10(rms)
-            inputLevels = [avgPower.scaledPower()]
-          }
-        }
-      }
-      
-      guard let buffer = pcmBuffer else {
+      guard let pcmBuffer = AVAudioPCMBuffer(
+        pcmFormat: inputFormat,
+        bufferListNoCopy: pcmBuffers
+      ) else {
         // Send dummy packet or the server thinks we died
         sendAudioPacket?(
           Data(repeating: 0,
@@ -112,18 +76,29 @@ extension JamulusAudioEngine {
         return noErr
       }
       
+      if counter % kUpdateInterval == 0 {
+        inputLevels = pcmBuffer.averageLevels
+//        inputLevels = buf.decibelsByChannel.map{ $0.scaledPower(minDb: 30) }
+      }
+
+      if inputMuted { // Zero the buffer, as opus needs the packet
+        let mutableBuffers = pcmBuffer.mutableAudioBufferList
+        let bufListPtr = UnsafeMutableAudioBufferListPointer(&mutableBuffers.pointee)
+        for buf in bufListPtr { memset(buf.mData, 0, Int(buf.mDataByteSize)) }
+      }
+
       // Encode and send the audio
       do {
-        if buffer.format.isValidOpusPCMFormat &&
-            buffer.format.channelCount == opus48kFormat.channelCount {
-          compressAndSendAudio(buffer: buffer,
+        if pcmBuffer.format.isValidOpusPCMFormat &&
+            pcmBuffer.format.channelCount == opus48kFormat.channelCount {
+          compressAndSendAudio(buffer: pcmBuffer,
                                transportProps: audioTransProps,
                                sendPacket: sendAudioPacket)
         } else {
           let frameRatio = opus48kFormat.sampleRate / inputFormat.sampleRate
           if let convertedBuffer = AVAudioPCMBuffer(
             pcmFormat: opus48kFormat,
-            frameCapacity: UInt32(Double(buffer.frameLength) * frameRatio)
+            frameCapacity: UInt32(Double(pcmBuffer.frameLength) * frameRatio)
           ) {
             var error: NSError? = nil
             
@@ -131,7 +106,7 @@ extension JamulusAudioEngine {
               to: convertedBuffer, error: &error,
               withInputFrom: { _, status in
                 status.pointee = .haveData
-                return buffer
+                return pcmBuffer
             })
 
             self.compressAndSendAudio(buffer: convertedBuffer,

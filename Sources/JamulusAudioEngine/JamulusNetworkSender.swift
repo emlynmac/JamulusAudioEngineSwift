@@ -6,8 +6,13 @@ import Opus
 
 final class JamulusNetworkSender {
   var transportProps: AudioTransportDetails {
+    willSet {
+      if newValue.codec != transportProps.codec {
+         _ = opus.encoderCtl(request: OPUS_RESET_STATE, value: 0)
+        _ = opus64.encoderCtl(request: OPUS_RESET_STATE, value: 0)
+      }
+    }
     didSet {
-      setupConverter()
       setOpusBitrate()
     }
   }
@@ -25,13 +30,15 @@ final class JamulusNetworkSender {
   private var mixerNode = AVAudioMixerNode()
   private var avSinkNode: AVAudioSinkNode!
   private var converter: AVAudioConverter?
-  private var frameRatio: Double = 1
+  
   private var opus: Opus.Custom
   private var opus64: Opus.Custom
   private func setupConverter() {
     if inputFormat != opus48kFormat {
+      print("Updated inputformat: \(inputFormat)")
       converter = AVAudioConverter(from: inputFormat, to: opus48kFormat)
-      frameRatio = opus48kFormat.sampleRate / inputFormat.sampleRate
+      converter?.sampleRateConverterQuality = Int(kAudioConverterSampleRateConverterComplexity_Mastering)
+      converter?.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
     }
   }
   
@@ -40,16 +47,19 @@ final class JamulusNetworkSender {
     transportDetails: AudioTransportDetails,
     opus: Opus.Custom,
     opus64: Opus.Custom,
-    sendAudioPacket: @escaping (Data) -> Void
+    sendAudioPacket: @escaping (Data) -> Void,
+    setVuLevels: @escaping ([Float]) -> Void
   ) {
     self.transportProps = transportDetails
     self.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
     self.opus = opus
     self.opus64 = opus64
     
+    var counter: UInt8 = 0
+    let moduluo: UInt8 = 64
     avSinkNode = AVAudioSinkNode { [weak self] timestamp, frameCount, pcmBuffers in
       guard let self = self else { return noErr }
-      
+      counter = counter &+ 1
       let audioTransProps = self.transportProps
       
       guard let pcmBuffer = AVAudioPCMBuffer(
@@ -64,10 +74,12 @@ final class JamulusNetworkSender {
         print("COULD NOT CREATE AUDIO")
         return noErr
       }
+      if counter % moduluo == 0 {
+        setVuLevels(pcmBuffer.averageLevels)
+      }
       
       // Encode and send the audio
       do {
-        let reSampleCount = UInt32(Double(pcmBuffer.frameLength) * self.frameRatio)
         if let converter = self.converter {
           if let convertedBuffer = AVAudioPCMBuffer(
             pcmFormat: opus48kFormat,
@@ -81,10 +93,7 @@ final class JamulusNetworkSender {
                 return pcmBuffer
               })
             if let err = error { throw JamulusError.avAudioError(err) }
-            if convertedBuffer.frameLength == 0 {
-              convertedBuffer.frameLength = reSampleCount
-              convertedBuffer.silence()
-            }
+            
             self.compressAndSendAudio(buffer: convertedBuffer,
                                       transportProps: audioTransProps,
                                       sendPacket: sendAudioPacket)

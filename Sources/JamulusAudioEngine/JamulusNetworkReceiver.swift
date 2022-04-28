@@ -5,12 +5,7 @@ import JamulusProtocol
 import Opus
 
 final class JamulusNetworkReceiver {
-  var transportProps: AudioTransportDetails {
-    didSet {
-      // TODO: Update the other things?
-      setupConverter()
-    }
-  }
+  var transportProps: AudioTransportDetails
   var outputFormat: AVAudioFormat {
     didSet {
       setupConverter()

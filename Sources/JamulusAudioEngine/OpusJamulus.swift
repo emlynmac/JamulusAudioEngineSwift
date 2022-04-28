@@ -15,8 +15,7 @@ public extension Opus.Custom {
     guard error == Opus.Error.ok else {
       throw JamulusError.opusError(error.rawValue)
     }
-    error = encoderCtl(request: OPUS_APPLICATION_RESTRICTED_LOWDELAY, value: 1)
-    
+
     switch frameSize {
     case 64:
       // Adjust PLC behaviour for better drop out handling

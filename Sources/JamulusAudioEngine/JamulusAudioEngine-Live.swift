@@ -75,7 +75,8 @@ extension JamulusAudioEngine {
       transportDetails: audioTransProps,
       opus: opus,
       opus64: opus64,
-      sendAudioPacket: { sendAudioPacket?($0) }
+      sendAudioPacket: { sendAudioPacket?($0) },
+      setVuLevels: { inputLevels = $0 }
     )
     
     avEngine.prepare()
@@ -147,7 +148,7 @@ extension JamulusAudioEngine {
           try avAudSession.setActive(true, options: .notifyOthersOnDeactivation)
           try setIosAudioInterface(interface: inputInterface, session: avAudSession)
           try configureAvAudio(transProps: audioTransProps)
-
+          print("Pref rate: \(avAudSession.preferredSampleRate), actual: \(avAudSession.sampleRate)")
 #elseif os(macOS)
           try setMacOsAudioInterfaces(input: inputInterface,
                                       output: outputInterface,
@@ -155,12 +156,6 @@ extension JamulusAudioEngine {
           try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
 #endif
           try avEngine.start()
-//          avEngine.mainMixerNode.installTap(
-//            onBus: 0,
-//            bufferSize: 8192,
-//            format: nil) { buffer, _ in
-//            inputLevels = buffer.averageLevels
-//          }
           networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
           networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
         } catch {
@@ -170,7 +165,6 @@ extension JamulusAudioEngine {
       },
       stop: {
         do {
-//          avEngine.mainMixerNode.removeTap(onBus: 0)
           avEngine.stop()
 #if !os(macOS)
           try avAudSession.setActive(false)

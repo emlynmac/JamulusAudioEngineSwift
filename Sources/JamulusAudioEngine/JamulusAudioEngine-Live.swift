@@ -1,5 +1,5 @@
 
-import AVFoundation
+import AVFAudio
 import Combine
 import Foundation
 import JamulusProtocol
@@ -57,26 +57,14 @@ extension JamulusAudioEngine {
       sendAudioPacket: { sendAudioPacket?($0) },
       vuLevelUpdater: { inputLevels = $0 }
     )
-
-//    let audioSink = audioSinkNode(
-//      transportDetails:  { audioTransProps },
-//      sendAudioPacket: { sendAudioPacket?($0) },
-//      avEngine: avEngine,
-//      isInputMuted: { inputMuted },
-//      vuLevels: { inputLevels = $0 }
-//    )
-
     
     avEngine.prepare()
     
-    let cancellable = NotificationCenter.default
-      .publisher(for: AVAudioSession.routeChangeNotification )
-      .sink { notification in
-        print(notification)
-//        if notification.userInfo[Notif AVAudioSessionRouteChangedReasonkey] {
-//
-//        }
-      }
+    let observer = NotificationCenter.default.addObserver(
+      forName: AVAudioSession.routeChangeNotification,
+      object: nil, queue: .main) { notification in
+      print(notification)
+    }
     
     @discardableResult
     func setOpusBitrate(audioTransProps: AudioTransportDetails) -> JamulusError? {

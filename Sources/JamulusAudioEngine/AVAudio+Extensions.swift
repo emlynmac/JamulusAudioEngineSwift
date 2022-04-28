@@ -5,13 +5,19 @@ import Foundation
 extension AVAudioPCMBuffer {
   
   public var averageLevels: [Float] {
-    processLevelsByChannel(outputModifier: { $0 })
-      .map { $0 / Float(frameLength) }
+    let divisor: Float = !format.isInterleaved ? Float(frameLength) :
+    Float(frameLength) / Float(format.channelCount)
+    
+    return processLevelsByChannel(outputModifier: { $0 })
+      .map { $0 / divisor }
   }
   
   public var rmsPowerByChannel: [Float] {
-    processLevelsByChannel(outputModifier: { $0 * $0 })
-      .map { $0 / Float(frameLength) }.map(sqrt)
+    let divisor: Float = !format.isInterleaved ? Float(frameLength) :
+    Float(frameLength) / Float(format.channelCount)
+    
+    return processLevelsByChannel(outputModifier: { $0 * $0 })
+      .map { $0 / divisor }.map(sqrt)
   }
   
   public var decibelsByChannel: [Float] {
@@ -20,20 +26,23 @@ extension AVAudioPCMBuffer {
   
   func processLevelsByChannel(outputModifier: (Float) -> Float ) -> [Float] {
     let chanCount = Int(format.channelCount)
+    guard chanCount > 0 else { return [] }
     var levels = [Float](repeating: 0, count: chanCount)
-    guard let data = floatChannelData else {
-      return levels
-    }
+    guard let data = floatChannelData else { return levels }
     
-    for sampleIdx in Swift.stride(from: 0, to: Int(frameLength), by: stride) {
-      for chanIdx in 0..<chanCount {
-        var val: Float = 0
-        if format.isInterleaved {
-          val = data.pointee[sampleIdx + chanIdx]
-        } else {
-          val = data.pointee[(chanIdx*Int(frameLength)) + sampleIdx]
+    for chanIdx in 0..<chanCount {
+      if format.isInterleaved {
+        let chanData = data[0]
+        for sampleIdx in Swift.stride(from: 0, to: Int(frameLength), by: stride) {
+          let val = chanData[sampleIdx + chanIdx]
+          levels[chanIdx] += abs(outputModifier(val))
         }
-        levels[chanIdx] += outputModifier(val)
+      } else {
+        for sampleIdx in 0..<Int(frameLength) {
+          for c in 0..<chanCount {
+            levels[c] += abs(outputModifier(data[c][sampleIdx]))
+          }
+        }
       }
     }
     return levels

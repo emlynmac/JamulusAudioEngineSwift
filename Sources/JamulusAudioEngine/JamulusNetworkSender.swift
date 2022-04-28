@@ -36,7 +36,7 @@ final class JamulusNetworkSender {
     self.transportProps = transportDetails
     self.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
     
-    let kUpdateInterval: UInt8 = 64
+    let kUpdateInterval: UInt8 = 32
     var counter: UInt8 = 0
     
     avSinkNode = AVAudioSinkNode { [weak self] timestamp, frameCount, pcmBuffers in
@@ -70,10 +70,11 @@ final class JamulusNetworkSender {
       
       // Encode and send the audio
       do {
+        let reSampleCount = UInt32(Double(pcmBuffer.frameLength) * self.frameRatio)
         if let converter = self.converter {
           if let convertedBuffer = AVAudioPCMBuffer(
             pcmFormat: opus48kFormat,
-            frameCapacity: UInt32(Double(pcmBuffer.frameLength) * self.frameRatio)
+            frameCapacity: reSampleCount
           ) {
             var error: NSError? = nil
             converter.convert(
@@ -83,6 +84,10 @@ final class JamulusNetworkSender {
                 return pcmBuffer
               })
             if let err = error { throw JamulusError.avAudioError(err) }
+            if convertedBuffer.frameLength == 0 {
+              convertedBuffer.frameLength = reSampleCount
+              convertedBuffer.silence()
+            }
             JamulusAudioEngine.compressAndSendAudio(buffer: convertedBuffer,
                                                     transportProps: audioTransProps,
                                                     sendPacket: sendAudioPacket)

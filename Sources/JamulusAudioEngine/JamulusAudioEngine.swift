@@ -40,27 +40,6 @@ public struct JamulusAudioEngine {
   public var setNetworkBufferSize: (Int) -> Void
   /// Set the engine transport details
   public var setTransportProperties: (AudioTransportDetails) -> JamulusError?
-  
-  
-  /// The opus instance supporting 128 frame encoding/decoding
-  static var opus: Opus.Custom! = {
-    let opus = try? Opus.Custom(
-      format: opus48kFormat,
-      application: .audio,
-      frameSize: UInt32(2 * ApiConsts.frameSamples64))
-    try? opus?.configureForJamulus()
-    return opus
-  }()
-  
-  /// The opus instance supporting 64 frame encoding/decoding
-  static var opus64: Opus.Custom! = {
-    let opus = try? Opus.Custom(
-      format: opus48kFormat,
-      application: .audio,
-      frameSize: UInt32(ApiConsts.frameSamples64))
-    try? opus?.configureForJamulus()
-    return opus
-  }()
 }
 
 ///
@@ -106,33 +85,3 @@ let opus48kFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                   channels: AVAudioChannelCount(2),
                                   interleaved: true)!
 let sampleRate48kHz = Float64(48000)
-
-
-extension JamulusAudioEngine {
-  ///
-  /// Sends an AVAudioPCMBuffer through the Opus compressor and calls
-  /// the closure to send the compressed data over the network
-  ///
-  static func compressAndSendAudio(buffer: AVAudioPCMBuffer,
-                                   transportProps: AudioTransportDetails,
-                                   sendPacket: ((Data) -> Void)?) {
-    let packetSize = Int(transportProps.opusPacketSize.rawValue)
-    
-    if transportProps.codec == .opus64 {
-      if let encodedData = try? opus64.encode(
-        buffer,
-        compressedSize: packetSize) {
-        sendPacket?(encodedData)
-      }
-    } else {
-      guard let encodedData = try? opus.encode(
-        buffer,
-        compressedSize: packetSize) else {
-        // Send an empty packet
-        sendPacket?(Data(repeating: 0, count: packetSize))
-        return
-      }
-      sendPacket?(encodedData)
-    }
-  }
-}

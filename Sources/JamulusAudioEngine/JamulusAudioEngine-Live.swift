@@ -9,6 +9,22 @@ extension JamulusAudioEngine {
   
   public static var live: Self {
     
+    /// The opus instance supporting 128 frame encoding/decoding
+    let opus: Opus.Custom! = try? Opus.Custom(
+      format: opus48kFormat,
+      application: .audio,
+      frameSize: UInt32(2 * ApiConsts.frameSamples64)
+    )
+    try? opus.configureForJamulus()
+    
+    /// The opus instance supporting 64 frame encoding/decoding
+    let opus64: Opus.Custom! = try? Opus.Custom(
+      format: opus48kFormat,
+      application: .audio,
+      frameSize: UInt32(ApiConsts.frameSamples64)
+    )
+    try? opus64.configureForJamulus()
+    
 #if os(iOS)
     let avAudSession = AVAudioSession.sharedInstance()
     initAvFoundation()
@@ -45,15 +61,20 @@ extension JamulusAudioEngine {
     var outputChannelMapping: [Int]?
 
     
-    let networkAudioSource = JamulusNetworkReceiver(
-      avEngine: avEngine, transportDetails: audioTransProps,
+    var networkAudioSource = JamulusNetworkReceiver(
+      avEngine: avEngine,
+      transportDetails: audioTransProps,
+      opus: opus,
+      opus64: opus64,
       dataReceiver: { jitterBuffer },
       updateBufferState: { bufferState = $0 }
     )
     
-    let networkAudioSender = JamulusNetworkSender(
+    var networkAudioSender = JamulusNetworkSender(
       avEngine: avEngine,
       transportDetails: audioTransProps,
+      opus: opus,
+      opus64: opus64,
       sendAudioPacket: { sendAudioPacket?($0) }
     )
     
@@ -62,24 +83,26 @@ extension JamulusAudioEngine {
     let observer = NotificationCenter.default.addObserver(
       forName: AVAudioSession.routeChangeNotification,
       object: nil, queue: .main) { notification in
+        networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
+        networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
+//        DispatchQueue.global().async {
+//          networkAudioSource = JamulusNetworkReceiver(
+//            avEngine: avEngine,
+//            transportDetails: audioTransProps,
+//            opus: opus,
+//            opus64: opus64,
+//            dataReceiver: { jitterBuffer },
+//            updateBufferState: { bufferState = $0 }
+//          )
+//          networkAudioSender = JamulusNetworkSender(
+//            avEngine: avEngine,
+//            transportDetails: audioTransProps,
+//            opus: opus,
+//            opus64: opus64,
+//            sendAudioPacket: { sendAudioPacket?($0) }
+//          )
+//        }
       print(notification)
-    }
-    
-    @discardableResult
-    func setOpusBitrate(audioTransProps: AudioTransportDetails) -> JamulusError? {
-      // Set opus bitrate
-      var err = Opus.Error.ok
-      if audioTransProps.codec == .opus64 {
-        err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-                                value: audioTransProps.bitRatePerSec())
-      } else {
-        err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-                              value: audioTransProps.bitRatePerSec())
-      }
-      guard err == Opus.Error.ok else {
-        return JamulusError.opusError(err.rawValue)
-      }
-      return nil
     }
     
     return JamulusAudioEngine(
@@ -117,7 +140,6 @@ extension JamulusAudioEngine {
         jitterBuffer.reset(
           blockSize: Int(transportDetails.opusPacketSize.rawValue)
         )
-        setOpusBitrate(audioTransProps: audioTransProps)
         sendAudioPacket = sendFunc
         
         do {
@@ -132,16 +154,15 @@ extension JamulusAudioEngine {
                                       avEngine: avEngine)
           try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
 #endif
+          try avEngine.start()
+//          avEngine.mainMixerNode.installTap(
+//            onBus: 0,
+//            bufferSize: 8192,
+//            format: nil) { buffer, _ in
+//            inputLevels = buffer.averageLevels
+//          }
           networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
           networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
-          
-          try avEngine.start()
-          avEngine.inputNode.installTap(
-            onBus: 0,
-            bufferSize: 8192,
-            format: nil) { buffer, _ in
-            inputLevels = buffer.averageLevels
-          }
         } catch {
           return JamulusError.avAudioError(error as NSError)
         }
@@ -149,7 +170,7 @@ extension JamulusAudioEngine {
       },
       stop: {
         do {
-          avEngine.inputNode.removeTap(onBus: 0)
+//          avEngine.mainMixerNode.removeTap(onBus: 0)
           avEngine.stop()
 #if !os(macOS)
           try avAudSession.setActive(false)
@@ -187,7 +208,6 @@ extension JamulusAudioEngine {
           return JamulusError.avAudioError(error as NSError)
         }
         audioTransProps = transportDetails
-        setOpusBitrate(audioTransProps: audioTransProps)
         networkAudioSource.transportProps = audioTransProps
         networkAudioSender.transportProps = audioTransProps
         return nil
@@ -213,9 +233,9 @@ func initAvFoundation() {
 func configureAvAudio(transProps: AudioTransportDetails) throws {
   // Configure AVAudioSession
   let avSession = AVAudioSession.sharedInstance()
-  let frameSizeMultiplier: UInt16 = transProps.codec == .opus64 ? 1 : 2
+
   let bufferDuration = TimeInterval(
-    Float64(transProps.blockFactor.frameSize * frameSizeMultiplier) /
+    Float64(transProps.frameSize) /
     ApiConsts.sampleRate48kHz
   )
   // Try to set session to 48kHz

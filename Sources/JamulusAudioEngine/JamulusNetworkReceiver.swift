@@ -2,6 +2,7 @@
 import AVFAudio
 import Foundation
 import JamulusProtocol
+import Opus
 
 final class JamulusNetworkReceiver {
   var transportProps: AudioTransportDetails {
@@ -30,6 +31,8 @@ final class JamulusNetworkReceiver {
   init(
     avEngine: AVAudioEngine,
     transportDetails: AudioTransportDetails,
+    opus: Opus.Custom,
+    opus64: Opus.Custom,
     dataReceiver: @escaping () -> NetworkBuffer,
     updateBufferState: @escaping (BufferState) -> Void
   ) {
@@ -57,7 +60,7 @@ final class JamulusNetworkReceiver {
       
       var buffer: AVAudioPCMBuffer?
       if audioTransProps.codec == .opus64 {
-        if let buf = try? JamulusAudioEngine.opus64?.decode(
+        if let buf = try? opus64.decode(
           data,
           compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
           sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
@@ -65,7 +68,7 @@ final class JamulusNetworkReceiver {
           buffer = buf
         }
       } else {
-        if let buf = try? JamulusAudioEngine.opus?.decode(
+        if let buf = try? opus.decode(
           data,
           compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue *
                                       UInt32(audioTransProps.blockFactor.rawValue)),
@@ -104,7 +107,6 @@ final class JamulusNetworkReceiver {
     // Attach to the engine
     avEngine.attach(avSourceNode)
     // Connect the network source to the output
-    avEngine.mainMixerNode.outputVolume = 0
     avEngine.connect(
       avSourceNode,
       to: avEngine.outputNode,

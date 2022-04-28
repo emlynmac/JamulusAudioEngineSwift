@@ -38,4 +38,11 @@ extension AVAudioPCMBuffer {
     }
     return levels
   }
+  
+  /// Zeroes out the buffers to make silence
+  func silence() {
+    let mutableBuffers = mutableAudioBufferList
+    let bufListPtr = UnsafeMutableAudioBufferListPointer(&mutableBuffers.pointee)
+    for buf in bufListPtr { memset(buf.mData, 0, Int(buf.mDataByteSize)) }
+  }
 }

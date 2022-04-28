@@ -2,8 +2,8 @@
 import AVFoundation
 import Combine
 import Foundation
-import Opus
 import JamulusProtocol
+import Opus
 
 extension JamulusAudioEngine {
   
@@ -43,104 +43,40 @@ extension JamulusAudioEngine {
     var inputChannelMapping: [Int]?
     var outputInterface = AudioInterface.InterfaceSelection.systemDefault
     var outputChannelMapping: [Int]?
+
     
-    let inputFormat = avEngine.inputNode.inputFormat(forBus: 0)
-    let converter = AVAudioConverter(from: inputFormat, to: opus48kFormat)
-    var inputMuted = true
-    
-    let audioSource = audioSourceNode(
-      dataSource: { jitterBuffer },
-      transportDetails: { audioTransProps },
-      updateBufferState: { bufferState = $0 },
-      opus: opus, opus64: opus64, avEngine: avEngine
+    let networkAudioSource = JamulusNetworkReceiver(
+      avEngine: avEngine, transportDetails: audioTransProps,
+      dataReceiver: { jitterBuffer },
+      updateBufferState: { bufferState = $0 }
     )
-    avEngine.attach(audioSource)
     
-    let kUpdateInterval: UInt8 = 50
-    var counter: UInt8 = 0
+    let networkAudioSender = JamulusNetworkSender(
+      avEngine: avEngine,
+      transportDetails: audioTransProps,
+      sendAudioPacket: { sendAudioPacket?($0) },
+      vuLevelUpdater: { inputLevels = $0 }
+    )
 
-    /// Audio input source node. Sends PCM buffers to opus and the network
-    let audioSink = AVAudioSinkNode { timestamp, frameCount, pcmBuffers in
-      counter = counter &+ 1
-      
-      guard let pcmBuffer = AVAudioPCMBuffer(
-        pcmFormat: inputFormat,
-        bufferListNoCopy: pcmBuffers
-      ) else {
-        // Send dummy packet or the server thinks we died
-        sendAudioPacket?(
-          Data(repeating: 0,
-               count: Int(audioTransProps.opusPacketSize.rawValue))
-        )
-        print("COULD NOT CREATE AUDIO")
-        return noErr
-      }
-      
-      if counter % kUpdateInterval == 0 {
-        inputLevels = pcmBuffer.averageLevels
-//        inputLevels = buf.decibelsByChannel.map{ $0.scaledPower(minDb: 30) }
-      }
+//    let audioSink = audioSinkNode(
+//      transportDetails:  { audioTransProps },
+//      sendAudioPacket: { sendAudioPacket?($0) },
+//      avEngine: avEngine,
+//      isInputMuted: { inputMuted },
+//      vuLevels: { inputLevels = $0 }
+//    )
 
-      if inputMuted { // Zero the buffer, as opus needs the packet
-        let mutableBuffers = pcmBuffer.mutableAudioBufferList
-        let bufListPtr = UnsafeMutableAudioBufferListPointer(&mutableBuffers.pointee)
-        for buf in bufListPtr { memset(buf.mData, 0, Int(buf.mDataByteSize)) }
-      }
-
-      // Encode and send the audio
-      do {
-        if pcmBuffer.format.isValidOpusPCMFormat &&
-            pcmBuffer.format.channelCount == opus48kFormat.channelCount {
-          compressAndSendAudio(buffer: pcmBuffer,
-                               transportProps: audioTransProps,
-                               sendPacket: sendAudioPacket)
-        } else {
-          let frameRatio = opus48kFormat.sampleRate / inputFormat.sampleRate
-          if let convertedBuffer = AVAudioPCMBuffer(
-            pcmFormat: opus48kFormat,
-            frameCapacity: UInt32(Double(pcmBuffer.frameLength) * frameRatio)
-          ) {
-            var error: NSError? = nil
-            
-            converter?.convert(
-              to: convertedBuffer, error: &error,
-              withInputFrom: { _, status in
-                status.pointee = .haveData
-                return pcmBuffer
-            })
-
-            self.compressAndSendAudio(buffer: convertedBuffer,
-                                      transportProps: audioTransProps,
-                                      sendPacket: sendAudioPacket)
-          } else {
-            throw JamulusError.audioConversionFailed
-          }
-        }
-      } catch {
-        print(error)
-        // Send dummy packet or the server thinks we died
-        sendAudioPacket?(
-          Data(repeating: 0,
-               count: Int(audioTransProps.opusPacketSize.rawValue))
-        )
-      }
-      return noErr
-    }
-    avEngine.attach(audioSink)
     
-    // Connect nodes
-    // Connect the input to the sink
-    avEngine.connect(avEngine.inputNode, to: audioSink, fromBus: 0, toBus: 0, format: nil)
-    
-    // Connect the network source to the output
-    avEngine.mainMixerNode.outputVolume = 0
-    avEngine.connect(audioSource, to: avEngine.outputNode, format: nil)
     avEngine.prepare()
     
-    //    NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification )
-    //      .sink { notification in
-    //        if notification.userInfo[AVAudioSessionRouteChangedReasonkey]
-    //      }
+    let cancellable = NotificationCenter.default
+      .publisher(for: AVAudioSession.routeChangeNotification )
+      .sink { notification in
+        print(notification)
+//        if notification.userInfo[Notif AVAudioSessionRouteChangedReasonkey] {
+//
+//        }
+      }
     
     @discardableResult
     func setOpusBitrate(audioTransProps: AudioTransportDetails) -> JamulusError? {
@@ -185,10 +121,12 @@ extension JamulusAudioEngine {
       setAudioOutputInterface: { outputInterface = $0; outputChannelMapping = $1 },
       inputLevelPublisher: { vuPublisher.eraseToAnyPublisher() },
       bufferState: { underrunPublisher.eraseToAnyPublisher() },
-      muteInput: { inputMuted = $0 },
+      muteInput: { networkAudioSender.inputMuted = $0 },
       start: { transportDetails, sendFunc in
         
         audioTransProps = transportDetails
+        networkAudioSource.transportProps = audioTransProps
+        networkAudioSender.transportProps = audioTransProps
         jitterBuffer.reset(
           blockSize: Int(transportDetails.opusPacketSize.rawValue)
         )
@@ -200,12 +138,16 @@ extension JamulusAudioEngine {
           try avAudSession.setActive(true, options: .notifyOthersOnDeactivation)
           try setIosAudioInterface(interface: inputInterface, session: avAudSession)
           try configureAvAudio(transProps: audioTransProps)
+
 #elseif os(macOS)
           try setMacOsAudioInterfaces(input: inputInterface,
                                       output: outputInterface,
                                       avEngine: avEngine)
           try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
 #endif
+          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
+          networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
+          
           try avEngine.start()
         } catch {
           return JamulusError.avAudioError(error as NSError)
@@ -251,6 +193,8 @@ extension JamulusAudioEngine {
           return JamulusError.avAudioError(error as NSError)
         }
         audioTransProps = transportDetails
+        networkAudioSource.transportProps = audioTransProps
+        networkAudioSender.transportProps = audioTransProps
         return nil
       }
     )
@@ -261,7 +205,8 @@ extension JamulusAudioEngine {
 func initAvFoundation() {
   let avSession = AVAudioSession.sharedInstance()
   try? avSession.setCategory(
-    .playAndRecord, mode: .measurement,
+    .playAndRecord,
+    mode: .measurement,
     options: [
       .allowAirPlay,
       .allowBluetoothA2DP,
@@ -415,82 +360,3 @@ func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
 }
 
 #endif
-
-/// Audio out source node for our engine.
-/// This needs to be re-initialized if the output node changes its format
-func audioSourceNode(
-  dataSource: @escaping () -> NetworkBuffer,
-  transportDetails: @escaping () -> AudioTransportDetails,
-  updateBufferState: @escaping (BufferState) -> Void,
-  opus: Opus.Custom?,
-  opus64: Opus.Custom?,
-  avEngine: AVAudioEngine
-) -> AVAudioSourceNode {
-  let outputFormat = avEngine.outputNode.outputFormat(forBus: 0)
-  let frameRatio = outputFormat.sampleRate / opus48kFormat.sampleRate
-  
-  var converter: AVAudioConverter?
-  if outputFormat != opus48kFormat {
-    converter = AVAudioConverter(from: opus48kFormat, to: outputFormat)
-  }
-  
-  return AVAudioSourceNode(
-    format: opus48kFormat
-  ) { isSilence, timestamp, frameCount, output in
-    let audioTransProps = transportDetails()
-    let netBuf = dataSource()
-    
-    var data: Data! = netBuf.read()
-    updateBufferState(netBuf.state)
-    
-    if data == nil {
-      data = Data()
-      isSilence.pointee = true
-    }
-    
-    var buffer: AVAudioPCMBuffer?
-    if audioTransProps.codec == .opus64 {
-      if let buf = try? opus64?.decode(
-        data,
-        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue),
-        sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
-      ) {
-        buffer = buf
-      }
-    } else {
-      if let buf = try? opus?.decode(
-        data,
-        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue *
-                                    UInt32(audioTransProps.blockFactor.rawValue)),
-        sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
-      ) {
-        buffer = buf
-      }
-    }
-    
-    if let buffer = buffer {
-      let reSampleFrameCount = UInt32(Double(buffer.frameLength) * frameRatio)
-      // Requires some form of conversion
-      if frameCount == reSampleFrameCount,
-         let audioConverter = converter,
-         let convertedBuffer = AVAudioPCMBuffer(
-          pcmFormat: opus48kFormat,
-          frameCapacity: frameCount
-         ) {
-        var error: NSError? = nil
-        audioConverter.convert(to: convertedBuffer, error: &error) { _, status in
-          status.pointee = .haveData
-          return buffer
-        }
-        output.assign(from: convertedBuffer.audioBufferList,
-                      count: Int(convertedBuffer.audioBufferList.pointee.mNumberBuffers))
-      } else {
-        output.assign(from: buffer.audioBufferList,
-                      count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
-      }
-    } else {
-      isSilence.pointee = true
-    }
-    return noErr
-  }
-}

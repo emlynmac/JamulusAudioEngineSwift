@@ -30,20 +30,15 @@ final class JamulusNetworkSender {
   init(
     avEngine: AVAudioEngine,
     transportDetails: AudioTransportDetails,
-    sendAudioPacket: @escaping (Data) -> Void,
-    vuLevelUpdater: @escaping ([Float]) -> Void
+    sendAudioPacket: @escaping (Data) -> Void
   ) {
     self.transportProps = transportDetails
     self.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
-    
-    let kUpdateInterval: UInt8 = 32
-    var counter: UInt8 = 0
     
     avSinkNode = AVAudioSinkNode { [weak self] timestamp, frameCount, pcmBuffers in
       guard let self = self else { return noErr }
       
       let audioTransProps = self.transportProps
-      counter = counter &+ 1
       
       guard let pcmBuffer = AVAudioPCMBuffer(
         pcmFormat: self.inputFormat,
@@ -57,13 +52,7 @@ final class JamulusNetworkSender {
         print("COULD NOT CREATE AUDIO")
         return noErr
       }
-      
-      if counter % kUpdateInterval == 0 {
-        vuLevelUpdater(pcmBuffer.averageLevels)
-//        vuLevelUpdater(pcmBuffer.decibelsByChannel
-//          .map{ $0.scaledPower(minDb: 30) } )
-      }
-      
+            
       if self.inputMuted {
         pcmBuffer.silence()
       }

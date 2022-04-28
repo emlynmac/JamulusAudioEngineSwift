@@ -54,8 +54,7 @@ extension JamulusAudioEngine {
     let networkAudioSender = JamulusNetworkSender(
       avEngine: avEngine,
       transportDetails: audioTransProps,
-      sendAudioPacket: { sendAudioPacket?($0) },
-      vuLevelUpdater: { inputLevels = $0 }
+      sendAudioPacket: { sendAudioPacket?($0) }
     )
     
     avEngine.prepare()
@@ -137,6 +136,12 @@ extension JamulusAudioEngine {
           networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
           
           try avEngine.start()
+          avEngine.inputNode.installTap(
+            onBus: 0,
+            bufferSize: 8192,
+            format: nil) { buffer, _ in
+            inputLevels = buffer.averageLevels
+          }
         } catch {
           return JamulusError.avAudioError(error as NSError)
         }
@@ -144,6 +149,7 @@ extension JamulusAudioEngine {
       },
       stop: {
         do {
+          avEngine.inputNode.removeTap(onBus: 0)
           avEngine.stop()
 #if !os(macOS)
           try avAudSession.setActive(false)
@@ -181,6 +187,7 @@ extension JamulusAudioEngine {
           return JamulusError.avAudioError(error as NSError)
         }
         audioTransProps = transportDetails
+        setOpusBitrate(audioTransProps: audioTransProps)
         networkAudioSource.transportProps = audioTransProps
         networkAudioSender.transportProps = audioTransProps
         return nil

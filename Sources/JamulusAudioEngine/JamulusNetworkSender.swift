@@ -34,11 +34,9 @@ final class JamulusNetworkSender {
   private var opus: Opus.Custom
   private var opus64: Opus.Custom
   private func setupConverter() {
-    if inputFormat != opus48kFormat {
-      print("Updated inputformat: \(inputFormat)")
-      converter = AVAudioConverter(from: inputFormat, to: opus48kFormat)
-      converter?.sampleRateConverterQuality = Int(kAudioConverterSampleRateConverterComplexity_Mastering)
-      converter?.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+    let format = mixerNode.outputFormat(forBus: 0)
+    if format != opus48kFormat {
+      converter = AVAudioConverter(from: format, to: opus48kFormat)
     }
   }
   
@@ -86,10 +84,16 @@ final class JamulusNetworkSender {
             frameCapacity: UInt32(audioTransProps.frameSize)
           ) {
             var error: NSError? = nil
+            var consumedOnePacket = false
             converter.convert(
               to: convertedBuffer, error: &error,
               withInputFrom: { _, status in
+                guard !consumedOnePacket else {
+                  status.pointee = .noDataNow
+                  return nil
+                }
                 status.pointee = .haveData
+                consumedOnePacket = true
                 return pcmBuffer
               })
             if let err = error { throw JamulusError.avAudioError(err) }

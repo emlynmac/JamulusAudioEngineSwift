@@ -171,7 +171,8 @@ extension JamulusAudioEngine {
 #endif
           sendAudioPacket = nil
           inputLevels = [Float](
-            repeating: 0, count: 2 // avAudSession.inputNumberOfChannels
+            repeating: 0,
+            count: avEngine.inputNode.auAudioUnit.channelMap?.count ?? 1
           )
         } catch {
           print(error)

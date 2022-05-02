@@ -193,7 +193,7 @@ extension JamulusAudioEngine {
           sendAudioPacket = nil
           inputLevels = [Float](
             repeating: 0,
-            count: avEngine.inputNode.auAudioUnit.channelMap?.count ?? 1
+            count: avEngine.inputNode.auAudioUnit.channelMap?.count ?? 2
           )
         } catch {
           return JamulusError.avAudioError(error as NSError)

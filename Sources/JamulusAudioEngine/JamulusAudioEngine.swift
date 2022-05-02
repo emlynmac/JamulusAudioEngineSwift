@@ -86,7 +86,7 @@ public extension JamulusAudioEngine {
 
 /// Jamulus uses 48k sample rate and the opus encoder needs an interleaved 2 channel format
 let opus48kFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                  sampleRate: 48000,
+                                  sampleRate: sampleRate48kHz,
                                   channels: AVAudioChannelCount(2),
                                   interleaved: true)!
 let sampleRate48kHz = Float64(48000)

@@ -128,20 +128,20 @@ final class JamulusNetworkSender {
   
   @discardableResult
   func setOpusBitrate() -> JamulusError? {
-//    // Set opus bitrate
-//    let bitrate = transportProps.bitRatePerSec()
-//    var err = Opus.Error.ok
-//    if transportProps.codec == .opus64 {
-//      err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-//                              value: bitrate)
-//    } else {
-//      err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-//                            value: bitrate)
-//    }
-//    guard err == Opus.Error.ok else {
-//      return JamulusError.opusError(err.rawValue)
-//    }
-//    print("encoding bitrate set to: \(bitrate) bps")
+    // Set opus bitrate
+    let bitrate = transportProps.bitRatePerSec()
+    var err = Opus.Error.ok
+    if transportProps.codec == .opus64 {
+      err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
+                              value: bitrate)
+    } else {
+      err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
+                            value: bitrate)
+    }
+    guard err == Opus.Error.ok else {
+      return JamulusError.opusError(err.rawValue)
+    }
+    print("encoding bitrate set to: \(bitrate) bps")
     return nil
   }
   

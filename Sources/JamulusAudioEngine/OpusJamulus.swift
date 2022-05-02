@@ -18,9 +18,8 @@ public extension Opus.Custom {
 
     // Typically not getting many packets dropped, so set to 5%
     error = encoderCtl(request: OPUS_SET_PACKET_LOSS_PERC_REQUEST, value: 5)
-    
-//    error = encoderCtl(request: OPUS_SET_LSB_DEPTH_REQUEST, value: 16)
-//    error = encoderCtl(request: OPUS_SET_COMPLEXITY_REQUEST, value: 1)
+    error = encoderCtl(request: OPUS_SET_LSB_DEPTH_REQUEST, value: 16)
+
     guard error == Opus.Error.ok else {
       throw JamulusError.opusError(error.rawValue)
     }

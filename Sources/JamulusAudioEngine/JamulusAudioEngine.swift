@@ -32,7 +32,10 @@ public struct JamulusAudioEngine {
   /// Start the audio engine
   public var start: (AudioTransportDetails, @escaping ((Data) -> Void)) -> JamulusError?
   /// Stop the audio engine
-  public var stop: () -> Void
+  public var stop: () ->  JamulusError?
+  
+  public var setReverbLevel: (Float) -> Void
+  public var setReverbType: (AVAudioUnitReverbPreset) -> Void
   
   /// Input for network Opus packet data
   public var handleAudioFromNetwork: (Data) -> Void
@@ -72,7 +75,9 @@ public extension JamulusAudioEngine {
       bufferState: { Just(.normal).eraseToAnyPublisher() },
       muteInput: { _ in },
       start: { _,_  in nil},
-      stop: { },
+      stop: { nil },
+      setReverbLevel: { _ in },
+      setReverbType: { _ in },
       handleAudioFromNetwork: { _ in },
       setNetworkBufferSize: { _ in },
       setTransportProperties: { details in nil })

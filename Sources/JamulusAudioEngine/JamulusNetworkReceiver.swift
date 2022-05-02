@@ -20,6 +20,8 @@ final class JamulusNetworkReceiver {
     if outputFormat != opus48kFormat {
       converter = AVAudioConverter(from: opus48kFormat, to: outputFormat)
       frameRatio = outputFormat.sampleRate / opus48kFormat.sampleRate
+    } else {
+      converter = nil
     }
   }
   

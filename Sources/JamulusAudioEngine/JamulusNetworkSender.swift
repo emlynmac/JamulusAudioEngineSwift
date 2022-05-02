@@ -21,27 +21,25 @@ final class JamulusNetworkSender {
       setupConverter()
     }
   }
-  var inputMuted: Bool = true {
-    didSet {
-      mixerNode.outputVolume = inputMuted ? 0 : 1
-    }
-  }
   
-  private var mixerNode = AVAudioMixerNode()
-  private var avSinkNode: AVAudioSinkNode!
+  var inputMuted: Bool = true
+  
+  private (set) var avSinkNode: AVAudioSinkNode!
   private var converter: AVAudioConverter?
   
   private var opus: Opus.Custom
   private var opus64: Opus.Custom
+  
   private func setupConverter() {
-    let format = mixerNode.outputFormat(forBus: 0)
-    if format != opus48kFormat {
-      converter = AVAudioConverter(from: format, to: opus48kFormat)
+    if inputFormat != opus48kFormat {
+      converter = AVAudioConverter(from: inputFormat, to: opus48kFormat)
+    } else {
+      converter = nil
     }
   }
   
   init(
-    avEngine: AVAudioEngine,
+    inputFormat: AVAudioFormat,
     transportDetails: AudioTransportDetails,
     opus: Opus.Custom,
     opus64: Opus.Custom,
@@ -49,7 +47,7 @@ final class JamulusNetworkSender {
     setVuLevels: @escaping ([Float]) -> Void
   ) {
     self.transportProps = transportDetails
-    self.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
+    self.inputFormat = inputFormat
     self.opus = opus
     self.opus64 = opus64
     
@@ -74,6 +72,11 @@ final class JamulusNetworkSender {
       }
       if counter % moduluo == 0 {
         setVuLevels(pcmBuffer.averageLevels)
+      }
+      
+      // Silence the buffer after we allow the VU meter to show input
+      if self.inputMuted {
+        pcmBuffer.silence()
       }
       
       // Encode and send the audio
@@ -121,33 +124,24 @@ final class JamulusNetworkSender {
       }
       return noErr
     }
-    avEngine.attach(avSinkNode)
-    avEngine.attach(mixerNode)
-    
-    avEngine.connect(avEngine.inputNode,
-                     to: mixerNode,
-                     fromBus: 0, toBus: 0,
-                     format: nil)
-    avEngine.connect(mixerNode, to: avSinkNode, format: nil)
-    mixerNode.outputVolume = 0
   }
   
   @discardableResult
   func setOpusBitrate() -> JamulusError? {
-    // Set opus bitrate
-    let bitrate = transportProps.bitRatePerSec()
-    var err = Opus.Error.ok
-    if transportProps.codec == .opus64 {
-      err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-                              value: bitrate)
-    } else {
-      err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
-                            value: bitrate)
-    }
-    guard err == Opus.Error.ok else {
-      return JamulusError.opusError(err.rawValue)
-    }
-    print("encoding bitrate set to: \(bitrate) bps")
+//    // Set opus bitrate
+//    let bitrate = transportProps.bitRatePerSec()
+//    var err = Opus.Error.ok
+//    if transportProps.codec == .opus64 {
+//      err = opus64.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
+//                              value: bitrate)
+//    } else {
+//      err = opus.encoderCtl(request: OPUS_SET_BITRATE_REQUEST,
+//                            value: bitrate)
+//    }
+//    guard err == Opus.Error.ok else {
+//      return JamulusError.opusError(err.rawValue)
+//    }
+//    print("encoding bitrate set to: \(bitrate) bps")
     return nil
   }
   
@@ -174,6 +168,7 @@ final class JamulusNetworkSender {
       sendPacket?(data)
     } else {
       // Send an empty packet
+      print("Failed to encode audio packet")
       sendPacket?(Data(repeating: 0, count: packetSize))
     }
   }

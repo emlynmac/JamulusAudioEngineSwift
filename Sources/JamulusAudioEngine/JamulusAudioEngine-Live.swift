@@ -61,7 +61,7 @@ extension JamulusAudioEngine {
     var outputChannelMapping: [Int]?
 
     
-    var networkAudioSource = JamulusNetworkReceiver(
+    let networkAudioSource = JamulusNetworkReceiver(
       avEngine: avEngine,
       transportDetails: audioTransProps,
       opus: opus,
@@ -70,8 +70,26 @@ extension JamulusAudioEngine {
       updateBufferState: { bufferState = $0 }
     )
     
-    var networkAudioSender = JamulusNetworkSender(
-      avEngine: avEngine,
+    // Build input mixer (input and reverb effects)
+    let inputMixerNode = AVAudioMixerNode()
+    avEngine.attach(inputMixerNode)
+
+    let reverbNode = AVAudioUnitReverb()
+    avEngine.attach(reverbNode)
+    avEngine.connect(reverbNode, to: inputMixerNode, format: nil)
+    reverbNode.loadFactoryPreset(.mediumHall)
+    reverbNode.wetDryMix = 0
+
+    let connectionPoints = [
+      AVAudioConnectionPoint(node: reverbNode, bus: 0),
+      AVAudioConnectionPoint(node: inputMixerNode,
+                             bus: inputMixerNode.nextAvailableInputBus)
+    ]
+    avEngine.connect(avEngine.inputNode, to: connectionPoints, fromBus: 0, format: nil)
+        
+    // Add the network transmitter
+    let networkAudioSender = JamulusNetworkSender(
+      inputFormat: inputMixerNode.outputFormat(forBus: 0),
       transportDetails: audioTransProps,
       opus: opus,
       opus64: opus64,
@@ -79,13 +97,16 @@ extension JamulusAudioEngine {
       setVuLevels: { inputLevels = $0 }
     )
     
+    avEngine.attach(networkAudioSender.avSinkNode)
+    avEngine.connect(inputMixerNode,
+                     to: networkAudioSender.avSinkNode,
+                     format: nil)
     avEngine.prepare()
     
     let observer = NotificationCenter.default.addObserver(
       forName: AVAudioSession.routeChangeNotification,
       object: nil, queue: .main) { notification in
         networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
-        networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
 //        DispatchQueue.global().async {
 //          networkAudioSource = JamulusNetworkReceiver(
 //            avEngine: avEngine,
@@ -157,7 +178,7 @@ extension JamulusAudioEngine {
 #endif
           try avEngine.start()
           networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
-          networkAudioSender.inputFormat = avEngine.inputNode.outputFormat(forBus: 0)
+          networkAudioSender.inputFormat = inputMixerNode.outputFormat(forBus: 0)
         } catch {
           return JamulusError.avAudioError(error as NSError)
         }
@@ -175,9 +196,12 @@ extension JamulusAudioEngine {
             count: avEngine.inputNode.auAudioUnit.channelMap?.count ?? 1
           )
         } catch {
-          print(error)
+          return JamulusError.avAudioError(error as NSError)
         }
+        return nil
       },
+      setReverbLevel: { reverbNode.wetDryMix = $0 },
+      setReverbType: { reverbNode.loadFactoryPreset($0) },
       handleAudioFromNetwork: jitterBuffer.write(_:),
       setNetworkBufferSize: {
         jitterBuffer.resizeTo(

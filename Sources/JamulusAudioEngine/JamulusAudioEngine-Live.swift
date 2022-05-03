@@ -24,6 +24,7 @@ extension JamulusAudioEngine {
       frameSize: UInt32(ApiConsts.frameSamples64)
     )
     try? opus64.configureForJamulus()
+    let avEngine = AVAudioEngine()
     
 #if os(iOS)
     let avAudSession = AVAudioSession.sharedInstance()
@@ -53,8 +54,7 @@ extension JamulusAudioEngine {
     }
     
     var sendAudioPacket: ((Data) -> Void)?
-    
-    let avEngine = AVAudioEngine()
+   
     var inputInterface = AudioInterface.InterfaceSelection.systemDefault
     var inputChannelMapping: [Int]?
     var outputInterface = AudioInterface.InterfaceSelection.systemDefault
@@ -76,8 +76,10 @@ extension JamulusAudioEngine {
 
     let reverbNode = AVAudioUnitReverb()
     avEngine.attach(reverbNode)
-    avEngine.connect(reverbNode, to: inputMixerNode, format: nil)
-    reverbNode.loadFactoryPreset(.mediumHall)
+    avEngine.connect(reverbNode, to: inputMixerNode,
+                     format: avEngine.inputNode.outputFormat(forBus: 0)
+    )
+    reverbNode.loadFactoryPreset(.cathedral)
     reverbNode.wetDryMix = 0
 
     let connectionPoints = [
@@ -85,7 +87,10 @@ extension JamulusAudioEngine {
       AVAudioConnectionPoint(node: inputMixerNode,
                              bus: inputMixerNode.nextAvailableInputBus)
     ]
-    avEngine.connect(avEngine.inputNode, to: connectionPoints, fromBus: 0, format: nil)
+    avEngine.connect(avEngine.inputNode, to: connectionPoints,
+                     fromBus: 0,
+                     format: avEngine.inputNode.outputFormat(forBus: 0)
+    )
         
     // Add the network transmitter
     let networkAudioSender = JamulusNetworkSender(
@@ -103,27 +108,10 @@ extension JamulusAudioEngine {
                      format: nil)
     avEngine.prepare()
     
-    let observer = NotificationCenter.default.addObserver(
+    _ = NotificationCenter.default.addObserver(
       forName: AVAudioSession.routeChangeNotification,
       object: nil, queue: .main) { notification in
         networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
-//        DispatchQueue.global().async {
-//          networkAudioSource = JamulusNetworkReceiver(
-//            avEngine: avEngine,
-//            transportDetails: audioTransProps,
-//            opus: opus,
-//            opus64: opus64,
-//            dataReceiver: { jitterBuffer },
-//            updateBufferState: { bufferState = $0 }
-//          )
-//          networkAudioSender = JamulusNetworkSender(
-//            avEngine: avEngine,
-//            transportDetails: audioTransProps,
-//            opus: opus,
-//            opus64: opus64,
-//            sendAudioPacket: { sendAudioPacket?($0) }
-//          )
-//        }
       print(notification)
     }
     
@@ -258,9 +246,7 @@ func configureAvAudio(transProps: AudioTransportDetails) throws {
     ApiConsts.sampleRate48kHz
   )
   // Try to set session to 48kHz
-  if avSession.sampleRate != Double(ApiConsts.sampleRate48kHz) {
-    try avSession.setPreferredSampleRate(Double(ApiConsts.sampleRate48kHz))
-  }
+  try avSession.setPreferredSampleRate(Double(ApiConsts.sampleRate48kHz))
   try avSession.setPreferredIOBufferDuration(bufferDuration)
 }
 
@@ -293,7 +279,7 @@ func setIosAudioInterface(interface: AudioInterface.InterfaceSelection,
 func configureAudio(audioTransProps: AudioTransportDetails,
                     avEngine: AVAudioEngine) throws {
   let frameSizeMultiplier: UInt16 = audioTransProps.codec == .opus64 ? 1 : 2
-  var bufferFrameSize = UInt32(audioTransProps.blockFactor.frameSize * frameSizeMultiplier)
+  var bufferFrameSize = UInt32(audioTransProps.frameSize * frameSizeMultiplier)
   try throwIfError(
     setBufferFrameSize(
       for: avEngine.outputNode.audioUnit, to: &bufferFrameSize

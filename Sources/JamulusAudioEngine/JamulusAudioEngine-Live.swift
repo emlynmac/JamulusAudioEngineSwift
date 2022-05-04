@@ -30,6 +30,8 @@ extension JamulusAudioEngine {
     let avAudSession = AVAudioSession.sharedInstance()
     initAvFoundation()
 #endif
+    let audioHardwarePublisher = AudioInterfacePublisher.live
+    
     let vuPublisher = PassthroughSubject<[Float], Never>()
     var inputLevels: [Float] = [0,0] {
       didSet {
@@ -62,12 +64,21 @@ extension JamulusAudioEngine {
 
     
     let networkAudioSource = JamulusNetworkReceiver(
-      avEngine: avEngine,
       transportDetails: audioTransProps,
       opus: opus,
       opus64: opus64,
       dataReceiver: { jitterBuffer },
       updateBufferState: { bufferState = $0 }
+    )
+    
+    // Attach to the engine
+    avEngine.attach(networkAudioSource.avSourceNode)
+    // Connect the network source to the output
+    avEngine.connect(
+      networkAudioSource.avSourceNode,
+      to: avEngine.mainMixerNode,
+      fromBus: 0, toBus: 0,
+      format: nil
     )
     
     // Build input mixer (input and reverb effects)
@@ -108,12 +119,16 @@ extension JamulusAudioEngine {
                      format: nil)
     avEngine.prepare()
     
-    _ = NotificationCenter.default.addObserver(
-      forName: AVAudioSession.routeChangeNotification,
-      object: nil, queue: .main) { notification in
-        networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
-      print(notification)
-    }
+    var cancelables = Set<AnyCancellable>()
+    audioHardwarePublisher.reasonPublisher
+      .sink(
+        receiveValue: { reason in
+          print(reason)
+//          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
+        }
+      )
+      .store(in: &cancelables)
+    
     
     return JamulusAudioEngine(
       recordingAllowed: {
@@ -128,19 +143,11 @@ extension JamulusAudioEngine {
         avAudSession.requestRecordPermission { callback($0) }
 #endif
       },
-      availableInterfaces: {
-#if os(macOS)
-        return macOsAudioInterfaces()
-#elseif os(iOS)
-        return iOsAudioInterfaces(session: avAudSession)
-#else
-        return []
-#endif
-      },
+      interfacePublisher: audioHardwarePublisher.interfaces,
       setAudioInputInterface: { inputInterface = $0; inputChannelMapping = $1 },
       setAudioOutputInterface: { outputInterface = $0; outputChannelMapping = $1 },
-      inputLevelPublisher: { vuPublisher.eraseToAnyPublisher() },
-      bufferState: { underrunPublisher.eraseToAnyPublisher() },
+      inputLevelPublisher: vuPublisher.eraseToAnyPublisher(),
+      bufferState: underrunPublisher.eraseToAnyPublisher(),
       muteInput: { networkAudioSender.inputMuted = $0 },
       start: { transportDetails, sendFunc in
         
@@ -148,7 +155,7 @@ extension JamulusAudioEngine {
         networkAudioSource.transportProps = audioTransProps
         networkAudioSender.transportProps = audioTransProps
         jitterBuffer.reset(
-          blockSize: Int(transportDetails.opusPacketSize.rawValue)
+          blockSize: Int(audioTransProps.opusPacketSize.rawValue)
         )
         sendAudioPacket = sendFunc
         
@@ -165,7 +172,6 @@ extension JamulusAudioEngine {
           try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
 #endif
           try avEngine.start()
-          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
           networkAudioSender.inputFormat = inputMixerNode.outputFormat(forBus: 0)
         } catch {
           return JamulusError.avAudioError(error as NSError)
@@ -226,15 +232,21 @@ extension JamulusAudioEngine {
 #if os(iOS)
 func initAvFoundation() {
   let avSession = AVAudioSession.sharedInstance()
-  try? avSession.setCategory(
+  do {
+    try avSession.setCategory(
     .playAndRecord,
     mode: .measurement,
     options: [
       .allowAirPlay,
       .allowBluetoothA2DP,
-      .duckOthers
+      .duckOthers,
+      .defaultToSpeaker,
+      .overrideMutedMicrophoneInterruption
     ]
   )
+  } catch {
+    print("Error initializing AVFoundation: \(error)")
+  }
 }
 
 func configureAvAudio(transProps: AudioTransportDetails) throws {
@@ -250,24 +262,18 @@ func configureAvAudio(transProps: AudioTransportDetails) throws {
   try avSession.setPreferredIOBufferDuration(bufferDuration)
 }
 
-func iOsAudioInterfaces(session: AVAudioSession) -> [AudioInterface] {
-  if let inputs = session.availableInputs {
-    return inputs.map { AudioInterface.fromAvPortDesc(desc: $0) }
-  }
-  return []
-}
-
 func setIosAudioInterface(interface: AudioInterface.InterfaceSelection,
                           session: AVAudioSession) throws {
   switch interface {
     
   case .specific(let id):
-    if let inputs = session.availableInputs,
-       let found = inputs.first(where: { $0.portName == id }) {
-      
-      // Must be called with an active session
-      try session.setPreferredInput(found)
+    guard let found = session.currentRoute.inputs
+      .first(where: { $0.portName == id }) else {
+      throw JamulusError.invalidAudioConfiguration
     }
+    // Must be called with an active session
+    try session.setPreferredInput(found)
+    
   case .systemDefault:
     try session.setPreferredInput(nil)
   }
@@ -291,80 +297,20 @@ func configureAudio(audioTransProps: AudioTransportDetails,
     )
   )
 }
-///
-/// Retrieve a list of audio interfaces for use
-///
-func macOsAudioInterfaces() -> [AudioInterface] {
-  var devices: [AudioInterface] = []
-  
-  do {
-    // Figure out how many interfaces we have
-    var aopa = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
-                                          mScope: kAudioObjectPropertyScopeGlobal,
-                                          mElement: kAudioObjectPropertyElementMain)
-    let audioDeviceIds: [AudioDeviceID] = try arrayFromAOPA(&aopa,
-                                                            forId: AudioObjectID(kAudioObjectSystemObject),
-                                                            create: { [AudioDeviceID](repeating: 0, count: $0) })
-    
-    for deviceId in audioDeviceIds {
-      // Enumerate
-      var inputChannels = [UInt32]()
-      var outputChannels = [UInt32]()
-      var propertySize = UInt32()
-      
-      aopa = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceName,
-                                        mScope: kAudioObjectPropertyScopeGlobal,
-                                        mElement: kAudioObjectPropertyElementMain)
-      // Get device Name
-      let deviceName = try stringValueForAOPA(&aopa, forId: deviceId)
-      // Manufacturer
-      aopa.mSelector = kAudioDevicePropertyDeviceManufacturer
-      let manufacturer = try stringValueForAOPA(&aopa, forId: deviceId)
-      print(deviceName, manufacturer)
-      
-      // Capabilities
-      aopa.mSelector = kAudioDevicePropertyStreams
-      
-      aopa.mScope = kAudioDevicePropertyScopeInput
-      try throwIfError(AudioObjectGetPropertyDataSize(deviceId, &aopa, 0, nil, &propertySize))
-      if propertySize > 0 {
-        aopa.mSelector = kAudioDevicePropertyStreamConfiguration
-        inputChannels = try channelArrayForAOPA(&aopa, forId: deviceId)
-      }
-      
-      aopa.mScope = kAudioDevicePropertyScopeOutput
-      try throwIfError(AudioObjectGetPropertyDataSize(deviceId, &aopa, 0, nil, &propertySize))
-      if propertySize > 0 {
-        aopa.mSelector = kAudioDevicePropertyStreamConfiguration
-        outputChannels = try channelArrayForAOPA(&aopa, forId: deviceId)
-      }
-      var device = AudioInterface(id: deviceId, name: deviceName,
-                                  inputChannelMap: inputChannels,
-                                  outputChannelMap: outputChannels)
-      device.notSupportedReason = try compatibilityCheck(device: device)
-      devices.append(device)
-    }
-  }
-  catch {
-    print(error)
-  }
-  return devices
-}
-
 
 func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
                              output: AudioInterface.InterfaceSelection,
                              avEngine: AVAudioEngine) throws {
-//  if let inUnit = avEngine.inputNode.audioUnit {
-//    switch input {
-//    case .specific(let id):
-//      try setAudioDevice(id: id, forAU: inUnit)
-//     
-//    case .systemDefault:
-//      let systemId = try getSystemAudioDeviceId(forInput: true)
-//      try setAudioDevice(id: systemId, forAU: inUnit)
-//    }
-//  }
+  if let inUnit = avEngine.inputNode.audioUnit {
+    switch input {
+    case .specific(let id):
+      try setAudioDevice(id: id, forAU: inUnit)
+     
+    case .systemDefault:
+      let systemId = try getSystemAudioDeviceId(forInput: true)
+      try setAudioDevice(id: systemId, forAU: inUnit)
+    }
+  }
 //  if let outUnit = avEngine.outputNode.audioUnit {
 //    try throwIfError(AudioUnitInitialize(outUnit))
 //    switch output {

@@ -15,7 +15,8 @@ public struct JamulusAudioEngine {
   public var requestRecordingPermission: (@escaping (Bool) -> Void) -> Void
   
   /// Provide the list of available audio interfaces and their capabilities
-  public var availableInterfaces: () -> [AudioInterface]
+  public var interfacePublisher: AnyPublisher<[AudioInterface], Never>
+  
   /// Set the input interface to use
   /// First parameter is the interface to use, second is the channel mapping to use for L/R
   public var setAudioInputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
@@ -24,9 +25,9 @@ public struct JamulusAudioEngine {
   public var setAudioOutputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
   
   /// Provides the UI with a value to use on a VU meter
-  public var inputLevelPublisher: () -> AnyPublisher<[Float], Never>
+  public var inputLevelPublisher: AnyPublisher<[Float], Never>
   /// State of the network receive buffer
-  public var bufferState: () -> AnyPublisher<BufferState , Never>
+  public var bufferState: AnyPublisher<BufferState , Never>
   /// Mute the input
   public var muteInput: (Bool) -> Void
   /// Start the audio engine
@@ -68,11 +69,11 @@ public extension JamulusAudioEngine {
     .init(
       recordingAllowed: { true },
       requestRecordingPermission: { $0(true) },
-      availableInterfaces: { [] },
+      interfacePublisher: Just<[AudioInterface]>([]).eraseToAnyPublisher(),
       setAudioInputInterface: { _, _ in },
       setAudioOutputInterface: { _, _ in },
-      inputLevelPublisher: { Just([0.5,0.4]).eraseToAnyPublisher() },
-      bufferState: { Just(.normal).eraseToAnyPublisher() },
+      inputLevelPublisher: Just([0.5,0.4]).eraseToAnyPublisher(),
+      bufferState: Just(.normal).eraseToAnyPublisher(),
       muteInput: { _ in },
       start: { _,_  in nil},
       stop: { nil },

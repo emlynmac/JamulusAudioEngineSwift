@@ -73,7 +73,7 @@ extension JamulusAudioEngine {
     
     // Attach to the engine
     avEngine.attach(networkAudioSource.avSourceNode)
-    // Connect the network source to the output
+    // Connect the network source to the main mixer
     avEngine.connect(
       networkAudioSource.avSourceNode,
       to: avEngine.mainMixerNode,
@@ -81,31 +81,24 @@ extension JamulusAudioEngine {
       format: nil
     )
     
+    let inputSampleRate = avEngine.inputNode.outputFormat(forBus: 0).sampleRate
+    let mixerOutFormat = AVAudioFormat(
+      standardFormatWithSampleRate: inputSampleRate, channels: 2
+    )
+    
     // Build input mixer (input and reverb effects)
     let inputMixerNode = AVAudioMixerNode()
     avEngine.attach(inputMixerNode)
-
     let reverbNode = AVAudioUnitReverb()
     avEngine.attach(reverbNode)
-    avEngine.connect(reverbNode, to: inputMixerNode,
-                     format: avEngine.inputNode.outputFormat(forBus: 0)
-    )
-    reverbNode.loadFactoryPreset(.cathedral)
-    reverbNode.wetDryMix = 0
 
-    let connectionPoints = [
-      AVAudioConnectionPoint(node: reverbNode, bus: 0),
-      AVAudioConnectionPoint(node: inputMixerNode,
-                             bus: inputMixerNode.nextAvailableInputBus)
-    ]
-    avEngine.connect(avEngine.inputNode, to: connectionPoints,
-                     fromBus: 0,
-                     format: avEngine.inputNode.outputFormat(forBus: 0)
-    )
-        
+    avEngine.connect(avEngine.inputNode, to: inputMixerNode, format: nil)
+    avEngine.connect(inputMixerNode, to: reverbNode, format: mixerOutFormat)
+    inputMixerNode.outputVolume = 1
+    
     // Add the network transmitter
     let networkAudioSender = JamulusNetworkSender(
-      inputFormat: inputMixerNode.outputFormat(forBus: 0),
+      inputFormat: mixerOutFormat!,
       transportDetails: audioTransProps,
       opus: opus,
       opus64: opus64,
@@ -119,7 +112,7 @@ extension JamulusAudioEngine {
                      format: nil)
     avEngine.prepare()
     
-    var cancelables = Set<AnyCancellable>()
+    var cancellables = Set<AnyCancellable>()
     audioHardwarePublisher.reasonPublisher
       .sink(
         receiveValue: { reason in
@@ -127,7 +120,7 @@ extension JamulusAudioEngine {
 //          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
         }
       )
-      .store(in: &cancelables)
+      .store(in: &cancellables)
     
     
     return JamulusAudioEngine(

@@ -71,7 +71,8 @@ final class JamulusNetworkSender {
         return noErr
       }
       if counter % moduluo == 0 {
-        setVuLevels(pcmBuffer.averageLevels)
+        let levels = pcmBuffer.averageLevels
+        setVuLevels(levels)
       }
       
       // Silence the buffer after we allow the VU meter to show input
@@ -100,7 +101,7 @@ final class JamulusNetworkSender {
                 return pcmBuffer
               })
             if let err = error { throw JamulusError.avAudioError(err) }
-            
+
             self.compressAndSendAudio(buffer: convertedBuffer,
                                       transportProps: audioTransProps,
                                       sendPacket: sendAudioPacket)

@@ -12,4 +12,12 @@ final class JamulusAudioEngineTests: XCTestCase {
     XCTAssertNotNil(coreAudioImplementation)
     XCTAssert(availableInterfaces?.count ?? 0 > 0)
   }
+  
+  func test_core_audio_device_selection_input() async {
+    
+  }
+  
+  func test_core_audio_device_selection_output() async {
+    
+  }
 }

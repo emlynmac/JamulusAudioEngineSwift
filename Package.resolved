@@ -1,9 +1,9 @@
 {
   "pins" : [
     {
-      "identity" : "jamulus-protocol-swift",
+      "identity" : "jamulusprotocol",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/emlynmac/jamulus-protocol-swift",
+      "location" : "https://github.com/emlynmac/JamulusProtocol",
       "state" : {
         "branch" : "migrate-to-async",
         "revision" : "20974b1558dd7816fbb78162881c8c6845e456a7"

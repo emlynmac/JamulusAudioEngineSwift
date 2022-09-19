@@ -1,6 +1,6 @@
 
+import CoreAudio
 import Foundation
-
 
 #if os(macOS)
 

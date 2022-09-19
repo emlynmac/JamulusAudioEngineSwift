@@ -112,15 +112,15 @@ extension JamulusAudioEngine {
                      format: nil)
     avEngine.prepare()
     
-    var cancellables = Set<AnyCancellable>()
-    audioHardwarePublisher.reasonPublisher
-      .sink(
-        receiveValue: { reason in
-          print(reason)
-//          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
-        }
-      )
-      .store(in: &cancellables)
+//    var cancellables = Set<AnyCancellable>()
+//    audioHardwarePublisher.reasonPublisher
+//      .sink(
+//        receiveValue: { reason in
+//          print(reason)
+////          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
+//        }
+//      )
+//      .store(in: &cancellables)
     
     
     return JamulusAudioEngine(
@@ -304,8 +304,8 @@ func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
       try setAudioDevice(id: systemId, forAU: inUnit)
     }
   }
-//  if let outUnit = avEngine.outputNode.audioUnit {
-//    try throwIfError(AudioUnitInitialize(outUnit))
+  if let outUnit = avEngine.outputNode.audioUnit {
+    try throwIfError(AudioUnitInitialize(outUnit))
 //    switch output {
 //    case .specific(let id):
 //      try setAudioDevice(id: id, forAU: outUnit)
@@ -315,7 +315,7 @@ func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
 //      try setAudioDevice(id: systemId, forAU: outUnit)
 //      break
 //    }
-//  }
+  }
 }
 
 #endif

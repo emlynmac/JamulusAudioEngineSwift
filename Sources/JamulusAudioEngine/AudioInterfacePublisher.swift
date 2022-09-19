@@ -6,14 +6,17 @@ import Foundation
 struct AudioInterfacePublisher {
   
   var interfaces: AnyPublisher<[AudioInterface], Never>
+#if os(iOS)
   var reasonPublisher: AnyPublisher<AVAudioSession.RouteChangeReason, Never>
+#endif
 }
 
+#if os(iOS)
 enum ChangeDetails {
   case oldDeviceUnvailable(AVAudioSessionPortDescription)
   case newDeviceAvailable(AVAudioSessionPortDescription)
 }
-
+#endif
 
 extension AudioInterfacePublisher {
  
@@ -44,12 +47,9 @@ extension AudioInterfacePublisher {
 #elseif os(macOS)
   static var live: Self {
     .init(
-      interfaces: NotificationCenter
-        .default
-        .publisher(for: ???)
-        .map { notification in
-          
-        }
+      interfaces: Just(
+        macOsAudioInterfaces()
+      )
         .eraseToAnyPublisher()
     )
   }

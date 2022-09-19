@@ -1,0 +1,32 @@
+{
+  "pins" : [
+    {
+      "identity" : "jamulus-protocol-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/emlynmac/jamulus-protocol-swift",
+      "state" : {
+        "branch" : "migrate-to-async",
+        "revision" : "20974b1558dd7816fbb78162881c8c6845e456a7"
+      }
+    },
+    {
+      "identity" : "swift-opus",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/emlynmac/swift-opus",
+      "state" : {
+        "branch" : "jamulus-coders",
+        "revision" : "42d044f81a2b97eb8984def407288f29de4ee2d9"
+      }
+    },
+    {
+      "identity" : "udpconnection",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/emlynmac/udpconnection",
+      "state" : {
+        "branch" : "migrate-to-async",
+        "revision" : "e3d327a50f276b7d20744feea1898c2dcbded7a4"
+      }
+    }
+  ],
+  "version" : 2
+}

@@ -32,25 +32,31 @@ extension JamulusAudioEngine {
 #endif
     let audioHardwarePublisher = AudioInterfacePublisher.live
     
-    let vuPublisher = PassthroughSubject<[Float], Never>()
+    var vuContinuation: AsyncStream<[Float]>.Continuation?
+    let vuLevelStream = AsyncStream<[Float]> { continuation in
+      vuContinuation = continuation
+    }
     var inputLevels: [Float] = [0,0] {
       didSet {
-        DispatchQueue.main.async {
-          vuPublisher.send(inputLevels)
-        }
+        vuContinuation?.yield(inputLevels)
       }
     }
+    
     // Receive Jitter Buffer
     var audioTransProps: AudioTransportDetails = .stereoNormal
     let jitterBuffer = NetworkBuffer(
       capacity: ApiConsts.defaultJitterBuffer,
       blockSize: Int(audioTransProps.opusPacketSize.rawValue)
     )
-    let underrunPublisher = PassthroughSubject<BufferState, Never>()
+    
+    var stateContinuation: AsyncStream<BufferState>.Continuation?
+    let bufferStateStream = AsyncStream<BufferState> { continuation in
+      stateContinuation = continuation
+    }
     var bufferState: BufferState = .normal {
       willSet {
         if newValue != bufferState {
-          underrunPublisher.send(newValue)
+          stateContinuation?.yield(newValue)
         }
       }
     }
@@ -136,11 +142,11 @@ extension JamulusAudioEngine {
         avAudSession.requestRecordPermission { callback($0) }
 #endif
       },
-      interfacePublisher: audioHardwarePublisher.interfaces,
+      interfacesAvailable: audioHardwarePublisher.interfaces,
       setAudioInputInterface: { inputInterface = $0; inputChannelMapping = $1 },
       setAudioOutputInterface: { outputInterface = $0; outputChannelMapping = $1 },
-      inputLevelPublisher: vuPublisher.eraseToAnyPublisher(),
-      bufferState: underrunPublisher.eraseToAnyPublisher(),
+      inputVuLevels: vuLevelStream,
+      bufferState: bufferStateStream,
       muteInput: { networkAudioSender.inputMuted = $0 },
       start: { transportDetails, sendFunc in
         
@@ -208,7 +214,7 @@ extension JamulusAudioEngine {
 #elseif os(macOS)
             try configureAudio(audioTransProps: transportDetails, avEngine: avEngine)
 #endif
-            if engineActive { try avEngine.start() }
+            if !engineActive { try avEngine.start() }
           }
         } catch {
           return JamulusError.avAudioError(error as NSError)
@@ -275,7 +281,7 @@ func setIosAudioInterface(interface: AudioInterface.InterfaceSelection,
 
 #if os(macOS)
 
-func configureAudio(audioTransProps: AudioTransportDetails,
+private func configureAudio(audioTransProps: AudioTransportDetails,
                     avEngine: AVAudioEngine) throws {
   let frameSizeMultiplier: UInt16 = audioTransProps.codec == .opus64 ? 1 : 2
   var bufferFrameSize = UInt32(audioTransProps.frameSize * frameSizeMultiplier)
@@ -291,7 +297,7 @@ func configureAudio(audioTransProps: AudioTransportDetails,
   )
 }
 
-func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
+private func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
                              output: AudioInterface.InterfaceSelection,
                              avEngine: AVAudioEngine) throws {
   if let inUnit = avEngine.inputNode.audioUnit {

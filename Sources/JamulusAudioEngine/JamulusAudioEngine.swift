@@ -1,6 +1,5 @@
 
 import AVFoundation
-import Combine
 import JamulusProtocol
 import Opus
 
@@ -15,7 +14,7 @@ public struct JamulusAudioEngine {
   public var requestRecordingPermission: (@escaping (Bool) -> Void) -> Void
   
   /// Provide the list of available audio interfaces and their capabilities
-  public var interfacePublisher: AnyPublisher<[AudioInterface], Never>
+  public var interfacesAvailable: AsyncStream<[AudioInterface]>
   
   /// Set the input interface to use
   /// First parameter is the interface to use, second is the channel mapping to use for L/R
@@ -25,15 +24,19 @@ public struct JamulusAudioEngine {
   public var setAudioOutputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
   
   /// Provides the UI with a value to use on a VU meter
-  public var inputLevelPublisher: AnyPublisher<[Float], Never>
+  public var inputVuLevels: AsyncStream<[Float]>
   /// State of the network receive buffer
-  public var bufferState: AnyPublisher<BufferState , Never>
+  public var bufferState: AsyncStream<BufferState>
   /// Mute the input
   public var muteInput: (Bool) -> Void
-  /// Start the audio engine
+  
+  /// Start the audio engine, with specified details
+  ///  - parameter AudioTransportDetails Network layer compression
+  ///  - parameter AudioSendCallback Function to call to send audio data
+  ///  - returns Error if call fails
   public var start: (AudioTransportDetails, @escaping ((Data) -> Void)) -> JamulusError?
   /// Stop the audio engine
-  public var stop: () ->  JamulusError?
+  public var stop: () -> JamulusError?
   
   public var setReverbLevel: (Float) -> Void
   public var setReverbType: (AVAudioUnitReverbPreset) -> Void
@@ -69,11 +72,11 @@ public extension JamulusAudioEngine {
     .init(
       recordingAllowed: { true },
       requestRecordingPermission: { $0(true) },
-      interfacePublisher: Just<[AudioInterface]>([]).eraseToAnyPublisher(),
+      interfacesAvailable: AsyncStream { [] },
       setAudioInputInterface: { _, _ in },
       setAudioOutputInterface: { _, _ in },
-      inputLevelPublisher: Just([0.5,0.4]).eraseToAnyPublisher(),
-      bufferState: Just(.normal).eraseToAnyPublisher(),
+      inputVuLevels: AsyncStream { [0.5,0.4] },
+      bufferState: AsyncStream { .normal },
       muteInput: { _ in },
       start: { _,_  in nil},
       stop: { nil },

@@ -1,13 +1,12 @@
 
 import AVFAudio
-import Combine
 import Foundation
 
 struct AudioInterfacePublisher {
   
-  var interfaces: AnyPublisher<[AudioInterface], Never>
+  var interfaces: AsyncStream<[AudioInterface]>
 #if os(iOS)
-  var reasonPublisher: AnyPublisher<AVAudioSession.RouteChangeReason, Never>
+  var reasonPublisher: AsyncStream<AVAudioSession.RouteChangeReason>
 #endif
 }
 
@@ -47,10 +46,9 @@ extension AudioInterfacePublisher {
 #elseif os(macOS)
   static var live: Self {
     .init(
-      interfaces: Just(
+      interfaces: AsyncStream {
         macOsAudioInterfaces()
-      )
-        .eraseToAnyPublisher()
+      }
     )
   }
 #endif

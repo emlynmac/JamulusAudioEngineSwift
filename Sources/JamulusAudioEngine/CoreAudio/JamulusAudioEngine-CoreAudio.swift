@@ -208,41 +208,83 @@ func ioCallbackIn(id: AudioObjectID,
                   ref: UnsafeMutableRawPointer?) -> OSStatus {
   
   if let audioConfig = ref?.bindMemory(
-    to: JamulusCoreAudioConfig.self, capacity: 1).pointee,
+    to: JamulusCoreAudioConfig.self, capacity: 1
+  ).pointee,
      id == audioConfig.activeInputDevice?.id,
      let packetSender = audioConfig.audioSendFunc,
      let inputFormat = audioConfig.inputFormat,
      let channelMap = audioConfig.inputChannelMapping {
     
     let transportProps = audioConfig.audioTransProps
-    print(".")
     
-    let bufferSize = buffersIn.pointee.mBuffers.mDataByteSize
-    let buffer = AVAudioPCMBuffer(
+    let inAudioBufPtr = UnsafeMutableAudioBufferListPointer(
+      UnsafeMutablePointer(mutating: buffersIn)
+    )
+    let inBuffersPtr = buffersIn.pointee
+    let inBuffersCount = inBuffersPtr.mNumberBuffers
+    let bufferSize = inBuffersPtr.mBuffers.mDataByteSize
+    
+    var buffer = AVAudioPCMBuffer(
       pcmFormat: inputFormat,
       frameCapacity: bufferSize
     )
     
-    // Map channels to buffer
-    let inBufPtr = UnsafeMutableAudioBufferListPointer(
-      UnsafeMutablePointer(mutating: buffersIn)
-    )
-    
+    // Map channels to buffer, as we must have 2 up / down to network
     var outChannel = 0
-    for chan in channelMap {
-      // Assign buffers to the AVAudioPCMBuffer
-      memcpy(
-        buffer!.floatChannelData![outChannel],
-        &inBufPtr[chan],
-        Int(bufferSize)
-      )
-      outChannel += 1
+    
+    // Audio in may be multiple discrete buffers or interleaved single buffer
+    for bufferIdx in 0..<inBuffersCount {
+      
+      let audioBuf = inAudioBufPtr.unsafePointer[Int(bufferIdx)]
+      let channelCount = Int(audioBuf.mBuffers.mNumberChannels)
+      let frameCount = Int(audioBuf.mBuffers.mDataByteSize /
+                           (audioBuf.mBuffers.mNumberChannels *
+                            UInt32(MemoryLayout<UInt32>.size)))
+      
+      let data = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(bufferIdx)]
+        .mData?.assumingMemoryBound(to: Float32.self)
+      
+      while outChannel < 2 {
+        if inputFormat.isInterleaved {
+          let outPtr = buffer!.floatChannelData!.pointee
+          
+          for sampleIdx in Swift.stride(from: 0, to: frameCount, by: channelCount) {
+            let leftSample = data![sampleIdx + channelMap[outChannel]]
+            let rightSample = data![sampleIdx + channelMap[outChannel+1]]
+            
+            outPtr[sampleIdx] = leftSample
+            outPtr[sampleIdx + 1] = rightSample
+          }
+          outChannel = 2
+        } else {
+          let outPtr = buffer!.floatChannelData![outChannel]
+          for frame in 0..<Int(frameCount) {
+            outPtr[frame] = data![frame]
+          }
+          outChannel += 1
+        }
+      }
+      buffer?.frameLength = AVAudioFrameCount(frameCount)
     }
-
     
     // Convert if needed
-    if let converter = audioConfig.inputConverter {
-//      converter.convert
+    if let converter = audioConfig.inputConverter,
+       let convertedBuffer = AVAudioPCMBuffer(
+        pcmFormat: opus48kFormat,
+        frameCapacity: UInt32(transportProps.frameSize)
+      ) {
+          var error: NSError? = nil
+          var consumedOnePacket = false
+          converter.convert(to: convertedBuffer, error: &error) { _, status in
+            guard !consumedOnePacket else {
+              status.pointee = .noDataNow
+              return nil
+            }
+            status.pointee = .haveData
+            consumedOnePacket = true
+            return buffer
+      }
+      buffer = convertedBuffer
     }
     
     // Grab buffers in format for Opus

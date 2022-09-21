@@ -18,7 +18,7 @@ enum ChangeDetails {
 #endif
 
 extension AudioInterfacePublisher {
- 
+#if os(iOS)
   private static func reasonForChange(notification: Notification) -> AVAudioSession.RouteChangeReason? {
     if let userInfo = notification.userInfo,
        let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
@@ -28,7 +28,6 @@ extension AudioInterfacePublisher {
     return nil
   }
   
-#if os(iOS)
   static var live: Self {
     
     let observerTask: Task<Void, Never>?

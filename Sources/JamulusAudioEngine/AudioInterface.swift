@@ -1,23 +1,14 @@
 
 import AudioToolbox
-import Foundation
 import AVFAudio
+import Foundation
 
 ///
 /// Wraps an audio interface up for mapping channels and
 /// selecting input / outputs 
 ///
 public struct AudioInterface: Identifiable, Hashable {
-  
-  public enum InterfaceSelection: Equatable, Hashable {
-    case systemDefault
-#if os(macOS)
-    case specific(id: AudioDeviceID)
-#else
-    case specific(id: String)
-#endif
-  }
-  
+
 #if os(macOS)
   public var id: AudioDeviceID
 #else
@@ -31,6 +22,10 @@ public struct AudioInterface: Identifiable, Hashable {
   public var outputChannelMap: [UInt32]
   public var outputChannelCount: Int { Int(outputChannelMap.reduce(0, +)) }
   public var notSupportedReason: String?
+  
+  public var activeSampleRate: Double = 48_000
+  public var inputInterleaved: Bool = false
+  public var outputInterleaved: Bool = false
   
   public static func == (lhs: AudioInterface, rhs: AudioInterface) -> Bool {
     return lhs.name == rhs.name && lhs.id == rhs.id

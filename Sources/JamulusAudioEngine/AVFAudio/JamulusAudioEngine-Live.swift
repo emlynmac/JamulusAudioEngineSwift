@@ -63,9 +63,9 @@ extension JamulusAudioEngine {
     
     var sendAudioPacket: ((Data) -> Void)?
    
-    var inputInterface = AudioInterface.InterfaceSelection.systemDefault
+    var inputInterface: AudioInterface?
     var inputChannelMapping: [Int]?
-    var outputInterface = AudioInterface.InterfaceSelection.systemDefault
+    var outputInterface: AudioInterface?
     var outputChannelMapping: [Int]?
 
     
@@ -165,9 +165,6 @@ extension JamulusAudioEngine {
           try configureAvAudio(transProps: audioTransProps)
           print("Pref rate: \(avAudSession.preferredSampleRate), actual: \(avAudSession.sampleRate)")
 #elseif os(macOS)
-          try setMacOsAudioInterfaces(input: inputInterface,
-                                      output: outputInterface,
-                                      avEngine: avEngine)
           try configureAudio(audioTransProps: audioTransProps, avEngine: avEngine)
 #endif
           try avEngine.start()
@@ -295,33 +292,6 @@ private func configureAudio(audioTransProps: AudioTransportDetails,
       for: avEngine.inputNode.audioUnit, to: &bufferFrameSize
     )
   )
-}
-
-private func setMacOsAudioInterfaces(input: AudioInterface.InterfaceSelection,
-                             output: AudioInterface.InterfaceSelection,
-                             avEngine: AVAudioEngine) throws {
-  if let inUnit = avEngine.inputNode.audioUnit {
-    switch input {
-    case .specific(let id):
-      try setAudioDevice(id: id, forAU: inUnit)
-     
-    case .systemDefault:
-      let systemId = try getSystemAudioDeviceId(forInput: true)
-      try setAudioDevice(id: systemId, forAU: inUnit)
-    }
-  }
-  if let outUnit = avEngine.outputNode.audioUnit {
-    try throwIfError(AudioUnitInitialize(outUnit))
-//    switch output {
-//    case .specific(let id):
-//      try setAudioDevice(id: id, forAU: outUnit)
-//      
-//    case .systemDefault:
-//      let systemId = try getSystemAudioDeviceId(forInput: false)
-//      try setAudioDevice(id: systemId, forAU: outUnit)
-//      break
-//    }
-  }
 }
 
 #endif

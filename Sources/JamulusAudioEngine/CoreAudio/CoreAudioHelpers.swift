@@ -60,23 +60,34 @@ func throwIfError(_ err: OSStatus) throws {
   }
 }
 
-func compatibilityCheck(device: AudioInterface) throws -> String? {
+func compatibilityCheck(device: inout AudioInterface) throws -> String? {
   var incompatibleReason: String?
   
   // Check sample rate support, we want 48kHz
   var propertySize = UInt32(MemoryLayout<Float64>.size)
   var inputSampleRate = Float64()
-  var aopa = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate,
-                                        mScope: kAudioObjectPropertyScopeGlobal,
-                                        mElement: kAudioObjectPropertyElementMain)
-  try throwIfError(AudioObjectGetPropertyData(device.id, &aopa, 0, nil, &propertySize, &inputSampleRate))
+  var aopa = AudioObjectPropertyAddress(
+    mSelector: kAudioDevicePropertyNominalSampleRate,
+    mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain
+  )
+  try throwIfError(
+    AudioObjectGetPropertyData(
+      device.id, &aopa, 0, nil, &propertySize, &inputSampleRate
+    )
+  )
   if inputSampleRate != sampleRate48kHz {
     inputSampleRate = sampleRate48kHz
     
     do {
-      try throwIfError(AudioObjectSetPropertyData(device.id, &aopa, 0, nil, propertySize, &inputSampleRate))
+      try throwIfError(
+        AudioObjectSetPropertyData(
+          device.id, &aopa, 0, nil, propertySize, &inputSampleRate
+        )
+      )
     } catch {
       incompatibleReason = "48kHz Sample Rate Not Supported!"
+      device.activeSampleRate = inputSampleRate
       return incompatibleReason
     }
   }
@@ -84,10 +95,20 @@ func compatibilityCheck(device: AudioInterface) throws -> String? {
   if device.inputChannelCount > 0 {   // Check input streams
     aopa.mSelector = kAudioDevicePropertyStreams
     aopa.mScope = kAudioObjectPropertyScopeInput
-    let streamIds: [AudioStreamID] = try arrayFromAOPA(&aopa, forId: device.id,
-                                                       create: { [AudioStreamID](repeating: 0, count: $0) })
-    guard let firstStreamId = streamIds.first else { return "Missing stream IDs for inputs" }
-    if let validationError = try validateStream(id: firstStreamId, withAOPA: &aopa) {
+    let streamIds: [AudioStreamID] = try arrayFromAOPA(
+      &aopa, forId: device.id,
+      create: { [AudioStreamID](repeating: 0, count: $0) }
+    )
+    print("\(streamIds.count) input streams")
+    guard let firstStreamId = streamIds.first else {
+      return "Missing stream IDs for inputs"
+    }
+    let (isInterleaved, validationError) = try validateStream(
+      id: firstStreamId, withAOPA: &aopa
+    )
+    device.inputInterleaved = isInterleaved
+    
+    guard validationError == nil else {
       return validationError
     }
   }
@@ -95,37 +116,57 @@ func compatibilityCheck(device: AudioInterface) throws -> String? {
   if device.outputChannelCount > 0 {  // Check output streams
     aopa.mSelector = kAudioDevicePropertyStreams
     aopa.mScope = kAudioObjectPropertyScopeOutput
-    let streamIds: [AudioStreamID] = try arrayFromAOPA(&aopa, forId: device.id,
-                                                       create: { [AudioStreamID](repeating: 0, count: $0) })
-    guard let firstStreamId = streamIds.first else { return "Missing stream IDs for outputs" }
-    if let validationError = try validateStream(id: firstStreamId, withAOPA: &aopa) {
+    let streamIds: [AudioStreamID] = try arrayFromAOPA(
+      &aopa, forId: device.id,
+      create: { [AudioStreamID](repeating: 0, count: $0) }
+    )
+    print("\(streamIds.count) output streams")
+    guard let firstStreamId = streamIds.first else {
+      return "Missing stream IDs for outputs"
+    }
+    let (isInterleaved, validationError) = try validateStream(
+      id: firstStreamId, withAOPA: &aopa
+    )
+    device.outputInterleaved = isInterleaved
+    guard validationError == nil else {
       return validationError
     }
   }
   return incompatibleReason
 }
 
-func validateStream(id: AudioStreamID,
-                    withAOPA aopa: inout AudioObjectPropertyAddress) throws -> String? {
+func validateStream(
+  id: AudioStreamID,
+  withAOPA aopa: inout AudioObjectPropertyAddress
+) throws -> (Bool, String?) {
   
   aopa.mSelector = kAudioStreamPropertyVirtualFormat
   aopa.mScope = kAudioObjectPropertyScopeGlobal
   
   var streamFormat = AudioStreamBasicDescription()
-  try getStreamFormatFor(id: id, withAopa: &aopa, streamDescription: &streamFormat)
+  try getStreamFormatFor(
+    id: id, withAopa: &aopa,
+    streamDescription: &streamFormat
+  )
+  let isInterleaved =
+  (streamFormat.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
+  var failReason: String?
+  
   if streamFormat.mFormatID != kAudioFormatLinearPCM ||
       streamFormat.mFramesPerPacket != 1 ||
       streamFormat.mBitsPerChannel != 32 ||
       !(((streamFormat.mFormatFlags & kAudioFormatFlagIsFloat) != 0)) ||
       !(((streamFormat.mFormatFlags & kAudioFormatFlagIsPacked) != 0)) {
-    return "Audio Stream Format Incompatible"
+    failReason = "Audio Stream Format Incompatible"
   }
-  return nil
+  return (isInterleaved, failReason)
 }
 
-func getStreamFormatFor(id: AudioStreamID,
-                        withAopa aopa: inout AudioObjectPropertyAddress,
-                        streamDescription: inout AudioStreamBasicDescription) throws {
+func getStreamFormatFor(
+  id: AudioStreamID,
+  withAopa aopa: inout AudioObjectPropertyAddress,
+  streamDescription: inout AudioStreamBasicDescription
+) throws {
   aopa.mSelector = kAudioStreamPropertyVirtualFormat
   aopa.mScope = kAudioObjectPropertyScopeGlobal
   try objectFromAOPA(&aopa, forId: id, object: &streamDescription)

@@ -63,9 +63,12 @@ extension AudioInterfacePublisher {
   }
 #elseif os(macOS)
   static var live: Self {
-    .init(
-      interfaces: AsyncStream {
-        macOsAudioInterfaces()
+    
+    var initialInterfaces = macOsAudioInterfaces()
+    
+    return .init(
+      interfaces: AsyncStream { continuation in
+        continuation.yield(macOsAudioInterfaces())
       }
     )
   }

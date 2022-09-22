@@ -63,9 +63,9 @@ extension JamulusAudioEngine {
     
     var sendAudioPacket: ((Data) -> Void)?
    
-    var inputInterface: AudioInterface?
+    var inputInterface: AudioInterface.InterfaceSelection = .systemDefault
     var inputChannelMapping: [Int]?
-    var outputInterface: AudioInterface?
+    var outputInterface: AudioInterface.InterfaceSelection = .systemDefault
     var outputChannelMapping: [Int]?
 
     

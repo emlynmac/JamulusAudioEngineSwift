@@ -5,6 +5,7 @@ import Foundation
 import JamulusProtocol
 import Opus
 
+#if os(macOS)
 ///
 /// Contains the configuration parameters to be used by the CoreAudio callbacks
 ///
@@ -16,6 +17,28 @@ final class JamulusCoreAudioConfig {
     }
   }
   var inputChannelMapping: [Int]?
+  var vuContinuation: AsyncStream<[Float]>.Continuation?
+  lazy var vuLevelStream = AsyncStream<[Float]> { continuation in
+    vuContinuation = continuation
+  }
+  var inputLevels: [Float] = [0,0] {
+    didSet {
+      vuContinuation?.yield(inputLevels)
+    }
+  }
+  
+  var stateContinuation: AsyncStream<BufferState>.Continuation?
+  lazy var bufferStateStream = AsyncStream<BufferState> { continuation in
+    stateContinuation = continuation
+  }
+  var bufferState: BufferState = .normal {
+    willSet {
+      if newValue != bufferState {
+        stateContinuation?.yield(newValue)
+      }
+    }
+  }
+  
   var audioInputProcId: AudioDeviceIOProcID?
   var activeOutputDevice: AudioInterface? {
     willSet {
@@ -49,6 +72,8 @@ final class JamulusCoreAudioConfig {
   var inputConverter: AVAudioConverter?
   var outputFormat: AVAudioFormat?
   var outputConverter: AVAudioConverter?
+  
+  var isInputMuted: Bool = true
   
   init(
     activeInputDevice: AudioInterface? = nil,
@@ -144,3 +169,5 @@ final class JamulusCoreAudioConfig {
     outputConverter = converter
   }
 }
+
+#endif

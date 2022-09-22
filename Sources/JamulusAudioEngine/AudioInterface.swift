@@ -8,7 +8,12 @@ import Foundation
 /// selecting input / outputs 
 ///
 public struct AudioInterface: Identifiable, Hashable {
-
+  
+  public enum InterfaceSelection: Equatable, Hashable {
+    case systemDefault
+    case specific(if: AudioInterface)
+  }
+  
 #if os(macOS)
   public var id: AudioDeviceID
 #else

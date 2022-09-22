@@ -6,52 +6,39 @@ import Foundation
 import JamulusProtocol
 import Opus
 
+#if os(macOS)
 extension JamulusAudioEngine {
   
   public static var coreAudio: Self {
-    
-    var stateContinuation: AsyncStream<BufferState>.Continuation?
-    let bufferStateStream = AsyncStream<BufferState> { continuation in
-      stateContinuation = continuation
-    }
-    var bufferState: BufferState = .normal {
-      willSet {
-        if newValue != bufferState {
-          stateContinuation?.yield(newValue)
-        }
-      }
-    }
-    
-    var vuContinuation: AsyncStream<[Float]>.Continuation?
-    let vuLevelStream = AsyncStream<[Float]> { continuation in
-      vuContinuation = continuation
-    }
-    var inputLevels: [Float] = [0,0] {
-      didSet {
-        vuContinuation?.yield(inputLevels)
-      }
-    }
-    
-    
+        
     var audioConfig = JamulusCoreAudioConfig()
-    
+    let publisher = AudioInterfacePublisher.live
     return JamulusAudioEngine(
       recordingAllowed: { true },
       requestRecordingPermission: { _ in },
-      interfacesAvailable: AudioInterfacePublisher.live.interfaces,
+      interfacesAvailable: publisher.interfaces
+      ,
       setAudioInputInterface: { selection, inputMapping in
         audioConfig.inputChannelMapping = inputMapping
-        audioConfig.activeInputDevice = selection
+        switch selection {
+        case .systemDefault:
+          audioConfig.activeInputDevice = nil
+        case .specific(let interface):
+          audioConfig.activeInputDevice = interface
+        }
       },
       setAudioOutputInterface: { selection, outputMapping in
         audioConfig.outputChannelMapping = outputMapping
-        audioConfig.activeOutputDevice = selection
+        switch selection {
+        case .systemDefault:
+          audioConfig.activeOutputDevice = nil
+        case .specific(let interface):
+          audioConfig.activeOutputDevice = interface
+        }
       },
-      inputVuLevels: vuLevelStream,
-      bufferState: bufferStateStream,
-      muteInput: { shouldMute in
-        
-      },
+      inputVuLevels: audioConfig.vuLevelStream,
+      bufferState: audioConfig.bufferStateStream,
+      muteInput: { audioConfig.isInputMuted = $0 },
       start: { transportDetails, audioSender in
         do {
           if let inId = audioConfig.activeInputDevice?.id,
@@ -181,19 +168,97 @@ func ioCallbackOut(id: AudioObjectID,
                    _: UnsafePointer<AudioTimeStamp>,
                    ref: UnsafeMutableRawPointer?) -> OSStatus {
   
-  if let audioEngine = ref?.bindMemory(
+  if let audioConfig = ref?.bindMemory(
     to: JamulusCoreAudioConfig.self,
     capacity: 1).pointee,
-     id == audioEngine.activeOutputDevice?.id {
+     id == audioConfig.activeOutputDevice?.id,
+     let outputFormat = audioConfig.outputFormat,
+     let channelMap = audioConfig.outputChannelMapping {
+    
+    // TODO: Verify valid channelMap
+    let audioTransProps = audioConfig.audioTransProps
+    
+    guard let opusAudio = audioConfig.jitterBuffer.read() else {
+      // Buffer underrun,
+      // TODO: report underrun?
+      
+      // TODO: Send silence
+      print("_")
+      return .zero
+    }
+    
     print("º")
-    // Get audio from jitter buffer
-    // Decompress with Opus
-    // Adjust sample rate if needed
-    // Output to the audio card
 
+    var buffer: AVAudioPCMBuffer?
+    
+    // Decompress with Opus
+    if audioTransProps.codec == .opus64 {
+      if let buf = try? audioConfig.opus64.decode(
+        opusAudio,
+        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue)
+      ) {
+        buffer = buf
+      }
+    } else {
+      if let buf = try? audioConfig.opus.decode(
+        opusAudio,
+        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue) * 2
+      ) {
+        buffer = buf
+      }
+    }
+    
+    // Convert to output hardware requirements
+    if let converter = audioConfig.outputConverter,
+       let convertedBuffer = AVAudioPCMBuffer(
+        pcmFormat: outputFormat,
+        frameCapacity: UInt32(audioTransProps.frameSize)
+       ) {
+      var error: NSError? = nil
+      var consumedOnePacket = false
+      converter.convert(to: convertedBuffer, error: &error) { _, status in
+        guard !consumedOnePacket else {
+          status.pointee = .noDataNow
+          return nil
+        }
+        status.pointee = .haveData
+        consumedOnePacket = true
+        return buffer
+      }
+      buffer = convertedBuffer
+    }
+  
+    // Map channels and output to the buffer
+    if let buffer = buffer {
+      let outAudioBufPtr = UnsafeMutableAudioBufferListPointer(buffersOut)
+      let sourceData = buffer.floatChannelData!.pointee
+      
+      let leftBuf = outputFormat.isInterleaved ?
+      outAudioBufPtr[0].mData!.assumingMemoryBound(to: Float32.self) :
+      outAudioBufPtr[channelMap[0]].mData!.assumingMemoryBound(to: Float32.self)
+      let rightBuf = outputFormat.isInterleaved ?
+      outAudioBufPtr[0].mData!.assumingMemoryBound(to: Float32.self) :
+      outAudioBufPtr[channelMap[1]].mData!.assumingMemoryBound(to: Float32.self)
+      
+      for sampleIdx in Swift.stride(
+        from: 0, to: Int(buffer.frameLength),
+        by: Int(opus48kFormat.channelCount)
+      ) {
+        let leftSample = sourceData[sampleIdx]
+        let rightSample = sourceData[sampleIdx+1]
+        
+        if outputFormat.isInterleaved {
+          leftBuf[sampleIdx+channelMap[0]] = leftSample
+          rightBuf[sampleIdx+channelMap[1]] = rightSample
+        } else {
+          leftBuf[sampleIdx] = leftSample
+          rightBuf[sampleIdx] = rightSample
+        }
+      }
+    }
   }
   
-  return OSStatus.zero
+  return .zero
 }
 
 ///
@@ -315,6 +380,7 @@ func ioCallbackIn(id: AudioObjectID,
       // TODO: Return error?
     }
   }
-  return OSStatus.zero
+  return .zero
 }
 
+#endif

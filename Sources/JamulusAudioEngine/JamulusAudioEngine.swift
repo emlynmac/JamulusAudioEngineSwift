@@ -6,12 +6,13 @@ import Opus
 ///
 /// Audio handling for the app
 ///
+@MainActor
 public struct JamulusAudioEngine {
   
   /// Whether recording is permitted
   public var recordingAllowed: () -> Bool
   /// Request permission to record
-  public var requestRecordingPermission: (@escaping (Bool) -> Void) -> Void
+  public var requestRecordingPermission: (() async -> Bool)
   
   /// Provide the list of available audio interfaces and their capabilities
   public var interfacesAvailable: AsyncStream<[AudioInterface]>
@@ -71,7 +72,7 @@ public extension JamulusAudioEngine {
   static var preview: Self {
     .init(
       recordingAllowed: { true },
-      requestRecordingPermission: { $0(true) },
+      requestRecordingPermission: { true },
       interfacesAvailable: AsyncStream { [] },
       setAudioInputInterface: { _, _ in },
       setAudioOutputInterface: { _, _ in },

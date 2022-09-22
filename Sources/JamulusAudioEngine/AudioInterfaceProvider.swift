@@ -2,7 +2,7 @@
 import AVFAudio
 import Foundation
 
-struct AudioInterfacePublisher {
+struct AudioInterfaceProvider {
   
   var interfaces: AsyncStream<[AudioInterface]>
 #if os(iOS)
@@ -17,7 +17,7 @@ enum ChangeDetails {
 }
 #endif
 
-extension AudioInterfacePublisher {
+extension AudioInterfaceProvider {
 #if os(iOS)
   private static func reasonForChange(notification: Notification) -> AVAudioSession.RouteChangeReason? {
     if let userInfo = notification.userInfo,
@@ -65,10 +65,13 @@ extension AudioInterfacePublisher {
   static var live: Self {
     
     var initialInterfaces = macOsAudioInterfaces()
+    var continuation: AsyncStream<[AudioInterface]>.Continuation?
     
+    // TODO: Listen for device changes and update...
     return .init(
-      interfaces: AsyncStream { continuation in
-        continuation.yield(macOsAudioInterfaces())
+      interfaces: AsyncStream { c in
+        continuation = c
+        c.yield(macOsAudioInterfaces())
       }
     )
   }

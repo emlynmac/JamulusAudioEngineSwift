@@ -222,4 +222,25 @@ func setAudioDevice(id: AudioDeviceID, forAU audioUnit: AudioUnit) throws {
   )
 }
 
+func setPreferredBufferSize(
+  deviceId: AudioDeviceID, isInput: Bool, size: UInt32
+) throws -> UInt32 {
+  var aopa = AudioObjectPropertyAddress(
+    mSelector: kAudioDevicePropertyBufferFrameSize,
+    mScope: isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput,
+    mElement: kAudioObjectPropertyElementMain
+  )
+  var bufferSize: UInt32 = size
+  var propertySize: UInt32 = UInt32(MemoryLayout.size(ofValue: bufferSize))
+  
+  try throwIfError(
+    AudioObjectSetPropertyData(
+      deviceId, &aopa, 0, nil,
+      propertySize, &bufferSize
+    )
+  )
+  // Passs back the value actually set (if throw is removed...)
+  return bufferSize
+}
+
 #endif

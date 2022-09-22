@@ -30,7 +30,7 @@ extension JamulusAudioEngine {
     let avAudSession = AVAudioSession.sharedInstance()
     initAvFoundation()
 #endif
-    let audioHardwarePublisher = AudioInterfacePublisher.live
+    let audioHardwarePublisher = AudioInterfaceProvider.live
     
     var vuContinuation: AsyncStream<[Float]>.Continuation?
     let vuLevelStream = AsyncStream<[Float]> { continuation in
@@ -137,9 +137,15 @@ extension JamulusAudioEngine {
         return true
 #endif
       },
-      requestRecordingPermission: { callback in
+      requestRecordingPermission: {
 #if os(iOS)
-        avAudSession.requestRecordPermission { callback($0) }
+        await withCheckedContinuation { continuation in
+          avAudSession.requestRecordPermission {
+            continuation.resume(returning: $0)
+          }
+        }
+#else
+        return true
 #endif
       },
       interfacesAvailable: audioHardwarePublisher.interfaces,

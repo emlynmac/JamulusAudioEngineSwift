@@ -11,6 +11,7 @@ import Opus
 ///
 final class JamulusCoreAudioConfig {
   
+  var audioInterfaces: [AudioInterface] = []
   var activeInputDevice: AudioInterface? {
     willSet {
       configureInputConverter(newInterface: newValue)

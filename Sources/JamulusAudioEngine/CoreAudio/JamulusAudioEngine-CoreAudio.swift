@@ -12,12 +12,23 @@ extension JamulusAudioEngine {
   public static var coreAudio: Self {
         
     var audioConfig = JamulusCoreAudioConfig()
-    let publisher = AudioInterfacePublisher.live
+    let interfaceWatcher = AudioInterfaceProvider.live
+    
+    var availableInterfaces: [AudioInterface] = []
+    
+    let availableInterfaceStream = AsyncStream<[AudioInterface]> { c in
+      Task {
+        for await ifs in interfaceWatcher.interfaces {
+          availableInterfaces = ifs
+          c.yield(ifs)
+        }
+      }
+    }
+    
     return JamulusAudioEngine(
       recordingAllowed: { true },
-      requestRecordingPermission: { _ in },
-      interfacesAvailable: publisher.interfaces
-      ,
+      requestRecordingPermission: { true },
+      interfacesAvailable: availableInterfaceStream,
       setAudioInputInterface: { selection, inputMapping in
         audioConfig.inputChannelMapping = inputMapping
         switch selection {
@@ -116,7 +127,7 @@ extension JamulusAudioEngine {
       },
       setTransportProperties: { transportDetails in
         do {
-          try configureAudio(audioTransProps: transportDetails)
+          try configureAudio(config: audioConfig)
         }
         catch {
           return JamulusError.avAudioError(error as NSError)
@@ -129,8 +140,16 @@ extension JamulusAudioEngine {
   }
 }
 
-private func configureAudio(audioTransProps: AudioTransportDetails) throws {
+private func configureAudio(config: JamulusCoreAudioConfig) throws {
+  var inDeviceId = config.activeInputDevice?.id
+  if inDeviceId == nil {
+   inDeviceId = try getSystemAudioDeviceId(forInput: true)
+  }
   
+  try configureAudioInterface(
+    deviceId: inDeviceId!, isInput: true,
+    audioTransDetails: config.audioTransProps
+  )
 }
 
 private func configureAudioInterface(
@@ -138,22 +157,11 @@ private func configureAudioInterface(
   isInput: Bool,
   audioTransDetails: AudioTransportDetails
 ) throws {
-  var aopa = AudioObjectPropertyAddress(
-    mSelector: kAudioDevicePropertyBufferFrameSize,
-    mScope: isInput ? kAudioDevicePropertyScopeInput :
-      kAudioDevicePropertyScopeOutput,
-    mElement: kAudioObjectPropertyElementMain
-  )
   
-  // Configure frame size buffer for the interface
-  var frameSize = audioTransDetails.frameSize
-  try throwIfError(
-    AudioObjectSetPropertyData(
-      deviceId, &aopa, 0,
-      nil,
-      UInt32(MemoryLayout<UInt32>.size),
-      &frameSize
-    )
+  let bufferSize = try setPreferredBufferSize(
+    deviceId: deviceId,
+    isInput: isInput,
+    size: UInt32(audioTransDetails.frameSize)
   )
 }
 

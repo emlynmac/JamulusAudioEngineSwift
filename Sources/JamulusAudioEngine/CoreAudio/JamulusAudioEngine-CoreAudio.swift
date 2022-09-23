@@ -189,13 +189,9 @@ func ioCallbackOut(id: AudioObjectID,
     guard let opusAudio = audioConfig.jitterBuffer.read() else {
       // Buffer underrun,
       // TODO: report underrun?
-      
-      // TODO: Send silence
       print("_")
       return .zero
     }
-    
-    print("º")
 
     var buffer: AVAudioPCMBuffer?
     
@@ -249,7 +245,7 @@ func ioCallbackOut(id: AudioObjectID,
       outAudioBufPtr[channelMap[1]].mData!.assumingMemoryBound(to: Float32.self)
       
       for sampleIdx in Swift.stride(
-        from: 0, to: Int(buffer.frameLength),
+        from: 0, to: Int(buffer.frameLength*opus48kFormat.channelCount),
         by: Int(opus48kFormat.channelCount)
       ) {
         let leftSample = sourceData[sampleIdx]
@@ -270,7 +266,7 @@ func ioCallbackOut(id: AudioObjectID,
 }
 
 ///
-/// Handle sending audio data from the audio interface to the ring buffer for the network to send
+/// Handle sending audio data from the audio interface, to Opus and then over the network
 ///
 func ioCallbackIn(id: AudioObjectID,
                   _: UnsafePointer<AudioTimeStamp>,
@@ -311,8 +307,7 @@ func ioCallbackIn(id: AudioObjectID,
       let audioBuf = inAudioBufPtr.unsafePointer[Int(bufferIdx)]
       let channelCount = Int(audioBuf.mBuffers.mNumberChannels)
       let frameCount = Int(audioBuf.mBuffers.mDataByteSize /
-                           (audioBuf.mBuffers.mNumberChannels *
-                            UInt32(MemoryLayout<UInt32>.size)))
+                            UInt32(MemoryLayout<UInt32>.size))
       
       let data = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(bufferIdx)]
         .mData?.assumingMemoryBound(to: Float32.self)
@@ -337,7 +332,7 @@ func ioCallbackIn(id: AudioObjectID,
           outChannel += 1
         }
       }
-      buffer?.frameLength = AVAudioFrameCount(frameCount)
+      buffer?.frameLength = AVAudioFrameCount(frameCount*2)
     }
     
     // Convert if needed

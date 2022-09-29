@@ -132,17 +132,18 @@ extension JamulusAudioEngine {
         )
       },
       setTransportProperties: { transportDetails in
+        let oldValues = audioConfig.audioTransProps
+        audioConfig.audioTransProps = transportDetails
         
         do {
-          if transportDetails.frameSize != audioConfig.audioTransProps.frameSize {
+          if oldValues.frameSize != audioConfig.audioTransProps.frameSize {
             try configureAudio(config: audioConfig)
           }
         }
         catch {
           return JamulusError.avAudioError(error as NSError)
         }
-        if transportDetails.opusPacketSize != audioConfig.audioTransProps.opusPacketSize ||
-            transportDetails.frameSize != audioConfig.audioTransProps.frameSize {
+        if oldValues.opusPacketSize != audioConfig.audioTransProps.opusPacketSize {
           audioConfig.jitterBuffer.reset(
             blockSize: Int(transportDetails.opusPacketSize.rawValue)
           )
@@ -164,17 +165,23 @@ private func configureAudio(config: JamulusCoreAudioConfig) throws {
   if outDeviceId == nil {
     outDeviceId = try getSystemAudioDeviceId(forInput: false)
   }
-  
+//  try throwIfError(AudioDeviceStop(inDeviceId!, config.audioInputProcId))
   try configureAudioInterface(
     deviceId: inDeviceId!,
     isInput: true,
     audioTransDetails: config.audioTransProps
   )
+  print("in interface configured")
+//  try throwIfError(AudioDeviceStop(outDeviceId!, config.audioOutputProcId))
   try configureAudioInterface(
     deviceId: outDeviceId!,
     isInput: false,
     audioTransDetails: config.audioTransProps
   )
+//  try throwIfError(AudioDeviceStart(inDeviceId!, config.audioInputProcId))
+//  try throwIfError(AudioDeviceStart(outDeviceId!, config.audioOutputProcId))
+  
+  print("out interface configured")
 }
 
 private func configureAudioInterface(
@@ -198,7 +205,7 @@ func ioCallbackOut(id: AudioObjectID,
                    _: UnsafePointer<AudioBufferList>,
                    _: UnsafePointer<AudioTimeStamp>,
                    buffersOut: UnsafeMutablePointer<AudioBufferList>,
-                   _: UnsafePointer<AudioTimeStamp>,
+                   timestamp: UnsafePointer<AudioTimeStamp>,
                    ref: UnsafeMutableRawPointer?) -> OSStatus {
   
   if let audioConfig = ref?.bindMemory(

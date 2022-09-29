@@ -1,7 +1,6 @@
 
 import AVFoundation
 import JamulusProtocol
-import Opus
 
 ///
 /// Audio handling for the app

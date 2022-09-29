@@ -51,12 +51,17 @@ extension JamulusAudioEngine {
       bufferState: audioConfig.bufferStateStream,
       muteInput: { audioConfig.isInputMuted = $0 },
       start: { transportDetails, audioSender in
+        audioConfig.audioTransProps = transportDetails
+        
         do {
           if let inId = audioConfig.activeInputDevice?.id,
              audioConfig.audioInputProcId == nil {
             try configureAudioInterface(
               deviceId: inId, isInput: true,
               audioTransDetails: transportDetails
+            )
+            audioConfig.jitterBuffer.reset(
+              blockSize: Int(transportDetails.opusPacketSize.rawValue)
             )
             try throwIfError(AudioDeviceCreateIOProcID(inId,
                                                        ioCallbackIn,
@@ -114,25 +119,34 @@ extension JamulusAudioEngine {
             return JamulusError.avAudioError(error as NSError)
           }
         }
+        audioConfig.vuContinuation?.yield([0,0])
         return nil
       },
       setReverbLevel: { level in },
       setReverbType: { reverbType in },
       handleAudioFromNetwork: audioConfig.jitterBuffer.write(_:),
-      setNetworkBufferSize: {
+      setNetworkBufferSize: { newSize in
         audioConfig.jitterBuffer.resizeTo(
-          newCapacity: $0,
+          newCapacity: newSize,
           blockSize: Int(audioConfig.audioTransProps.opusPacketSize.rawValue)
         )
       },
       setTransportProperties: { transportDetails in
+        
         do {
-          try configureAudio(config: audioConfig)
+          if transportDetails.frameSize != audioConfig.audioTransProps.frameSize {
+            try configureAudio(config: audioConfig)
+          }
         }
         catch {
           return JamulusError.avAudioError(error as NSError)
         }
-        
+        if transportDetails.opusPacketSize != audioConfig.audioTransProps.opusPacketSize ||
+            transportDetails.frameSize != audioConfig.audioTransProps.frameSize {
+          audioConfig.jitterBuffer.reset(
+            blockSize: Int(transportDetails.opusPacketSize.rawValue)
+          )
+        }
         audioConfig.audioTransProps = transportDetails
         return nil
       }
@@ -146,8 +160,19 @@ private func configureAudio(config: JamulusCoreAudioConfig) throws {
    inDeviceId = try getSystemAudioDeviceId(forInput: true)
   }
   
+  var outDeviceId = config.activeOutputDevice?.id
+  if outDeviceId == nil {
+    outDeviceId = try getSystemAudioDeviceId(forInput: false)
+  }
+  
   try configureAudioInterface(
-    deviceId: inDeviceId!, isInput: true,
+    deviceId: inDeviceId!,
+    isInput: true,
+    audioTransDetails: config.audioTransProps
+  )
+  try configureAudioInterface(
+    deviceId: outDeviceId!,
+    isInput: false,
     audioTransDetails: config.audioTransProps
   )
 }
@@ -188,7 +213,6 @@ func ioCallbackOut(id: AudioObjectID,
     
     guard let opusAudio = audioConfig.jitterBuffer.read() else {
       // Buffer underrun,
-      // TODO: report underrun?
       print("_")
       return .zero
     }
@@ -206,7 +230,8 @@ func ioCallbackOut(id: AudioObjectID,
     } else {
       if let buf = try? audioConfig.opus.decode(
         opusAudio,
-        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue) * 2
+        compressedPacketSize: Int32(audioTransProps.opusPacketSize.rawValue * UInt32(audioTransProps.blockFactor.rawValue)),
+        sampleMultiplier: Int32(audioTransProps.blockFactor.rawValue)
       ) {
         buffer = buf
       }
@@ -271,7 +296,7 @@ func ioCallbackOut(id: AudioObjectID,
 func ioCallbackIn(id: AudioObjectID,
                   _: UnsafePointer<AudioTimeStamp>,
                   buffersIn: UnsafePointer<AudioBufferList>,
-                  _: UnsafePointer<AudioTimeStamp>,
+                  timestamp: UnsafePointer<AudioTimeStamp>,
                   _: UnsafeMutablePointer<AudioBufferList>,
                   _: UnsafePointer<AudioTimeStamp>,
                   ref: UnsafeMutableRawPointer?) -> OSStatus {
@@ -308,6 +333,12 @@ func ioCallbackIn(id: AudioObjectID,
       let channelCount = Int(audioBuf.mBuffers.mNumberChannels)
       let frameCount = Int(audioBuf.mBuffers.mDataByteSize /
                             UInt32(MemoryLayout<UInt32>.size))
+
+      if (Int(timestamp.pointee.mSampleTime) % 512) == 0 {
+        if let vuData = buffer?.averageLevels {
+          audioConfig.vuContinuation?.yield(vuData)
+        }
+      }
       
       let data = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(bufferIdx)]
         .mData?.assumingMemoryBound(to: Float32.self)

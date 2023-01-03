@@ -231,7 +231,7 @@ func setPreferredBufferSize(
     mElement: kAudioObjectPropertyElementMain
   )
   var bufferSize: UInt32 = size
-  var propertySize: UInt32 = UInt32(MemoryLayout.size(ofValue: bufferSize))
+  let propertySize: UInt32 = UInt32(MemoryLayout.size(ofValue: bufferSize))
   
   try throwIfError(
     AudioObjectSetPropertyData(

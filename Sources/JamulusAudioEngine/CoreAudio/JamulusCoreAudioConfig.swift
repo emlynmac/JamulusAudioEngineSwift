@@ -18,8 +18,11 @@ final class JamulusCoreAudioConfig {
     }
   }
   var inputChannelMapping: [Int]?
-  var vuContinuation: AsyncStream<[Float]>.Continuation?
-  lazy var vuLevelStream = AsyncStream<[Float]> { continuation in
+  
+  private var vuContinuation: AsyncStream<[Float]>.Continuation?
+  lazy var vuLevelStream = AsyncStream<[Float]>(
+    bufferingPolicy: .bufferingNewest(10)
+  ) { continuation in
     vuContinuation = continuation
   }
   var inputLevels: [Float] = [0,0] {
@@ -27,9 +30,12 @@ final class JamulusCoreAudioConfig {
       vuContinuation?.yield(inputLevels)
     }
   }
+  var sampleTimeStartOffset: Float64?
   
-  var stateContinuation: AsyncStream<BufferState>.Continuation?
-  lazy var bufferStateStream = AsyncStream<BufferState> { continuation in
+  private var stateContinuation: AsyncStream<BufferState>.Continuation?
+  lazy var bufferStateStream = AsyncStream<BufferState> (
+    bufferingPolicy: .bufferingNewest(10)
+  ) { continuation in
     stateContinuation = continuation
   }
   var bufferState: BufferState = .normal {
@@ -57,6 +63,10 @@ final class JamulusCoreAudioConfig {
         _ = opus?.encoderCtl(request: OPUS_RESET_STATE, value: 0)
         _ = opus64?.encoderCtl(request: OPUS_RESET_STATE, value: 0)
       }
+    }
+    didSet {
+      // Reset this here
+      sampleTimeStartOffset = nil
     }
   }
   let jitterBuffer = NetworkBuffer(

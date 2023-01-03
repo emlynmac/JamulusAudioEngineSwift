@@ -52,7 +52,8 @@ final class NetworkBuffer {
   func read() -> Data? {
     queue.sync {
       let data = array[readIndex]
-      print("            R: \(readIndex) [\(String(array.map{$0 == nil ? "_" : "*"}))]")
+      // DEBUG_BUFFER
+//      print("            R: \(readIndex) [\(String(array.map{$0 == nil ? "_" : "*"}))]")
       
       switch state {
       case .underrun, .empty:
@@ -103,7 +104,8 @@ final class NetworkBuffer {
         case .empty:
           // First packet into the buffer after a reset
           readSeqNum = seqNum
-          print("First seqNum is \(seqNum) data is \(data.count) long")
+          // DEBUG_BUFFER
+//          print("First seqNum is \(seqNum) data is \(data.count) long")
           state = .underrun
           
         case .underrun:
@@ -115,7 +117,7 @@ final class NetworkBuffer {
           
         default:
           if seqNumDiff < 0 {
-            print("seqNumDiff <= 0")
+//            print("seqNumDiff <= 0")
             while seqNumDiff <= 0 {
               array[readIndex] = nil
               readSeqNum = readSeqNum &- 1
@@ -126,7 +128,7 @@ final class NetworkBuffer {
             }
             writeIndex = readIndex
           } else if seqNumDiff >= arrayCount {
-            print("seqNumDiff >= arrayCount")
+//            print("seqNumDiff >= arrayCount")
             while seqNumDiff >= arrayCount-1 {
               array[readIndex] = nil
               readSeqNum = readSeqNum &+ 1
@@ -142,8 +144,8 @@ final class NetworkBuffer {
             if writeIndex >= arrayCount { writeIndex -= arrayCount }
           }
         }
-        
-        print("W: \(writeIndex), diff: \(seqNumDiff)")
+        // DEBUG_BUFFER
+//        print("W: \(writeIndex), diff: \(seqNumDiff)")
         array[writeIndex] = audioData
       }
     }

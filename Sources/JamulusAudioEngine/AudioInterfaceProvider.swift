@@ -63,17 +63,16 @@ extension AudioInterfaceProvider {
   }
 #elseif os(macOS)
   static var live: Self {
-    
-    var initialInterfaces = macOsAudioInterfaces()
     var continuation: AsyncStream<[AudioInterface]>.Continuation?
     
-    // TODO: Listen for device changes and update...
-    return .init(
+    let liveInterface = AudioInterfaceProvider.init(
       interfaces: AsyncStream { c in
         continuation = c
         c.yield(macOsAudioInterfaces())
       }
     )
+    continuation?.yield(macOsAudioInterfaces())
+    return liveInterface
   }
 #endif
 }

@@ -14,12 +14,12 @@ extension JamulusAudioEngine {
     var audioConfig = JamulusCoreAudioConfig()
     let interfaceWatcher = AudioInterfaceProvider.live
     
-    var availableInterfaces: [AudioInterface] = []
+//    var availableInterfaces: [AudioInterface] = []
     
     let availableInterfaceStream = AsyncStream<[AudioInterface]> { c in
       Task {
         for await ifs in interfaceWatcher.interfaces {
-          availableInterfaces = ifs
+//          availableInterfaces = ifs
           c.yield(ifs)
         }
       }
@@ -119,7 +119,7 @@ extension JamulusAudioEngine {
             return JamulusError.avAudioError(error as NSError)
           }
         }
-        audioConfig.vuContinuation?.yield([0,0])
+        audioConfig.inputLevels = [0,0]
         return nil
       },
       setReverbLevel: { level in },
@@ -190,7 +190,7 @@ private func configureAudioInterface(
   audioTransDetails: AudioTransportDetails
 ) throws {
   
-  let bufferSize = try setPreferredBufferSize(
+  let _ = try setPreferredBufferSize(
     deviceId: deviceId,
     isInput: isInput,
     size: UInt32(audioTransDetails.frameSize)
@@ -219,8 +219,6 @@ func ioCallbackOut(id: AudioObjectID,
     let audioTransProps = audioConfig.audioTransProps
     
     guard let opusAudio = audioConfig.jitterBuffer.read() else {
-      // Buffer underrun,
-      print("_")
       return .zero
     }
 
@@ -340,13 +338,6 @@ func ioCallbackIn(id: AudioObjectID,
       let channelCount = Int(audioBuf.mBuffers.mNumberChannels)
       let frameCount = Int(audioBuf.mBuffers.mDataByteSize /
                             UInt32(MemoryLayout<UInt32>.size))
-
-      if (Int(timestamp.pointee.mSampleTime) % 512) == 0 {
-        if let vuData = buffer?.averageLevels {
-          audioConfig.vuContinuation?.yield(vuData)
-        }
-      }
-      
       let data = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(bufferIdx)]
         .mData?.assumingMemoryBound(to: Float32.self)
       
@@ -371,6 +362,23 @@ func ioCallbackIn(id: AudioObjectID,
         }
       }
       buffer?.frameLength = AVAudioFrameCount(frameCount*2)
+    }
+    
+    // Update the VU meter, but only at an appropriate rate.
+    let sampleTimestamp = timestamp.pointee.mSampleTime
+
+    if let start = audioConfig.sampleTimeStartOffset {
+      if (Int(sampleTimestamp - start) % 8192) == 0 {
+        if let vuData = buffer?.scaledPowerByChannel {
+          audioConfig.inputLevels = vuData
+        }
+      }
+    } else {
+      audioConfig.sampleTimeStartOffset = sampleTimestamp
+    }
+    
+    if audioConfig.isInputMuted {
+      buffer?.silence()
     }
     
     // Convert if needed

@@ -12,6 +12,18 @@ import Opus
 final class JamulusCoreAudioConfig {
   
   var audioInterfaces: [AudioInterface] = []
+  
+  var defaultInInterface: AudioInterface? {
+    let defaultInputInterfaceId = try? defaultAudioDevice(forInput: true)
+    return audioInterfaces.first(where: { $0.id == defaultInputInterfaceId })
+  }
+  
+  var defaultOutInterface: AudioInterface? {
+    let defaultOutputInterfaceId = try? defaultAudioDevice(forInput: false)
+    return audioInterfaces.first(where: { $0.id == defaultOutputInterfaceId })
+  }
+  
+  var preferredInputDevice: AudioInterface?
   var activeInputDevice: AudioInterface? {
     willSet {
       configureInputConverter(newInterface: newValue)
@@ -117,6 +129,14 @@ final class JamulusCoreAudioConfig {
       frameSize: UInt32(ApiConsts.frameSamples64)
     )
     try? opus64.configureForJamulus()
+  }
+  
+  func configureDefaultInInterface() {
+    activeInputDevice = defaultInInterface
+  }
+  
+  func configureDefaultOutInterface() {
+    activeOutputDevice = defaultOutInterface
   }
   
   private func configureInputConverter(newInterface: AudioInterface?) {

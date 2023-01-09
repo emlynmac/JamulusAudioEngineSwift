@@ -77,5 +77,26 @@ func macOsAudioInterfaces() -> [AudioInterface] {
   return devices
 }
 
+func defaultAudioDevice(forInput: Bool) throws -> AudioDeviceID {
+  var audioInputDevice: AudioDeviceID = 0
+  var aopa = AudioObjectPropertyAddress(
+    mSelector: forInput ? kAudioHardwarePropertyDefaultInputDevice :
+      kAudioHardwarePropertyDefaultOutputDevice,
+    mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain
+  )
+
+  var propertySize = UInt32(MemoryLayout.size(ofValue: audioInputDevice))
+  
+  try throwIfError(
+    AudioObjectGetPropertyData(
+      AudioObjectID(kAudioObjectSystemObject),
+      &aopa, 0,
+      nil,
+      &propertySize,
+      &audioInputDevice)
+  )
+  return audioInputDevice
+}
 
 #endif

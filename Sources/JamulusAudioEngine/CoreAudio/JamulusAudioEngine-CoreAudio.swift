@@ -14,12 +14,19 @@ extension JamulusAudioEngine {
     var audioConfig = JamulusCoreAudioConfig()
     let interfaceWatcher = AudioInterfaceProvider.live
     
-//    var availableInterfaces: [AudioInterface] = []
-    
     let availableInterfaceStream = AsyncStream<[AudioInterface]> { c in
       Task {
         for await ifs in interfaceWatcher.interfaces {
-//          availableInterfaces = ifs
+          audioConfig.audioInterfaces = ifs
+          
+          // If selected are empty, set default system
+          if audioConfig.activeInputDevice == nil {
+            audioConfig.activeInputDevice = audioConfig.defaultInInterface
+          }
+          if audioConfig.activeOutputDevice == nil {
+            audioConfig.activeOutputDevice = audioConfig.defaultOutInterface
+          }
+          
           c.yield(ifs)
         }
       }
@@ -33,7 +40,7 @@ extension JamulusAudioEngine {
         audioConfig.inputChannelMapping = inputMapping
         switch selection {
         case .systemDefault:
-          audioConfig.activeInputDevice = nil
+          audioConfig.configureDefaultInInterface()
         case .specific(let interface):
           audioConfig.activeInputDevice = interface
         }
@@ -42,7 +49,7 @@ extension JamulusAudioEngine {
         audioConfig.outputChannelMapping = outputMapping
         switch selection {
         case .systemDefault:
-          audioConfig.activeOutputDevice = nil
+          audioConfig.configureDefaultOutInterface()
         case .specific(let interface):
           audioConfig.activeOutputDevice = interface
         }
@@ -54,40 +61,55 @@ extension JamulusAudioEngine {
         audioConfig.audioTransProps = transportDetails
         
         do {
-          if let inId = audioConfig.activeInputDevice?.id,
-             audioConfig.audioInputProcId == nil {
-            try configureAudioInterface(
-              deviceId: inId, isInput: true,
-              audioTransDetails: transportDetails
-            )
-            audioConfig.jitterBuffer.reset(
-              blockSize: Int(transportDetails.opusPacketSize.rawValue)
-            )
-            try throwIfError(AudioDeviceCreateIOProcID(inId,
-                                                       ioCallbackIn,
-                                                       &audioConfig,
-                                                       &audioConfig.audioInputProcId)
-            )
-            audioConfig.audioSendFunc = audioSender
-            print("Created Input Callback")
-            try throwIfError(AudioDeviceStart(inId, audioConfig.audioInputProcId))
-            print("Started Input Callback")
+          guard let inId = audioConfig.activeInputDevice?.id,
+                  audioConfig.audioInputProcId == nil else {
+            throw JamulusError.noInputDevice
           }
           
-          if let outId = audioConfig.activeOutputDevice?.id, audioConfig.audioOutputProcId == nil  {
-            try configureAudioInterface(
-              deviceId: outId, isInput: false,
-              audioTransDetails: audioConfig.audioTransProps
+          try configureAudioInterface(
+            deviceId: inId,
+            isInput: true,
+            audioTransDetails: transportDetails
+          )
+          audioConfig.jitterBuffer.reset(
+            blockSize: Int(transportDetails.opusPacketSize.rawValue)
+          )
+          try throwIfError(
+            AudioDeviceCreateIOProcID(
+              inId,
+              ioCallbackIn,
+              &audioConfig,
+              &audioConfig.audioInputProcId
             )
-            try throwIfError(AudioDeviceCreateIOProcID(outId, ioCallbackOut,
-                                                       &audioConfig,
-                                                       &audioConfig.audioOutputProcId)
-            )
-            print("Created Output Callback")
-            try throwIfError(AudioDeviceStart(outId, audioConfig.audioOutputProcId))
-            
-            print("Started Output Callback")
+          )
+          audioConfig.audioSendFunc = audioSender
+          print("Created Input Callback")
+          try throwIfError(
+            AudioDeviceStart(inId, audioConfig.audioInputProcId)
+          )
+          print("Started Input Callback")
+          
+          guard let outId = audioConfig.activeOutputDevice?.id,
+                audioConfig.audioOutputProcId == nil else {
+            throw JamulusError.noOutputDevice
           }
+          
+          try configureAudioInterface(
+            deviceId: outId, isInput: false,
+            audioTransDetails: audioConfig.audioTransProps
+          )
+          try throwIfError(
+            AudioDeviceCreateIOProcID(
+              outId, ioCallbackOut,
+              &audioConfig,
+              &audioConfig.audioOutputProcId
+            )
+          )
+          print("Created Output Callback")
+          try throwIfError(AudioDeviceStart(outId, audioConfig.audioOutputProcId))
+          
+          print("Started Output Callback")
+          
         } catch {
           return JamulusError.avAudioError(error as NSError)
         }
@@ -185,11 +207,13 @@ private func configureAudio(config: JamulusCoreAudioConfig) throws {
 }
 
 private func configureAudioInterface(
-  deviceId: AudioDeviceID,
+  deviceId: AudioDeviceID?,
   isInput: Bool,
   audioTransDetails: AudioTransportDetails
 ) throws {
-  
+  guard let deviceId else {
+    throw JamulusError.invalidAudioConfiguration
+  }
   let _ = try setPreferredBufferSize(
     deviceId: deviceId,
     isInput: isInput,

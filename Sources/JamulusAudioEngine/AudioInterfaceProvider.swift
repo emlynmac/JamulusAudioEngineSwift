@@ -65,6 +65,7 @@ extension AudioInterfaceProvider {
   static var live: Self {
     var continuation: AsyncStream<[AudioInterface]>.Continuation?
     
+    // TODO: update after signal from system
     let liveInterface = AudioInterfaceProvider.init(
       interfaces: AsyncStream { c in
         continuation = c

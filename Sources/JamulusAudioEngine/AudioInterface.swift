@@ -9,11 +9,6 @@ import Foundation
 ///
 public struct AudioInterface: Identifiable, Hashable {
   
-  public enum InterfaceSelection: Equatable, Hashable {
-    case systemDefault
-    case specific(if: AudioInterface)
-  }
-  
 #if os(macOS)
   public var id: AudioDeviceID
 #else
@@ -27,6 +22,8 @@ public struct AudioInterface: Identifiable, Hashable {
   public var outputChannelMap: [UInt32]
   public var outputChannelCount: Int { Int(outputChannelMap.reduce(0, +)) }
   public var notSupportedReason: String?
+  public var isSystemInDefault: Bool = false
+  public var isSystemOutDefault: Bool = false
   
   public var activeSampleRate: Double = 48_000
   public var inputInterleaved: Bool = false
@@ -54,6 +51,42 @@ public struct AudioInterface: Identifiable, Hashable {
 #endif
 }
 
+
+extension AudioInterface {
+  static public var defaultOutInterface: AudioInterface {
+#if os(macOS)
+    return (try? defaultAudioDevice(forInput: false)) ??
+    AudioInterface(
+      id: 0,
+      name: "System Default",
+      inputChannelMap: [],
+      outputChannelMap: [],
+      isSystemOutDefault: true
+    )
+
+#elseif os(iOS)
+    
+#endif
+  }
+  
+  static public var defaultInInterface: AudioInterface {
+  
+#if os(macOS)
+    return (try? defaultAudioDevice(forInput: true)) ??
+    AudioInterface(
+      id: 0,
+      name: "System Default",
+      inputChannelMap: [],
+      outputChannelMap: [],
+      isSystemInDefault: true
+    )
+    
+#elseif os(iOS)
+    
+#endif
+
+  }
+}
 
 extension AudioInterface {
 #if os(macOS)

@@ -18,10 +18,10 @@ public struct JamulusAudioEngine {
   
   /// Set the input interface to use
   /// First parameter is the interface to use, second is the channel mapping to use for L/R
-  public var setAudioInputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
+  public var setAudioInputInterface: (AudioInterface, [Int]?) -> Void
   /// Set the output interface to use
   /// First parameter is the interface to use, second is the channel mapping to use for L/R
-  public var setAudioOutputInterface: (AudioInterface.InterfaceSelection, [Int]?) -> Void
+  public var setAudioOutputInterface: (AudioInterface, [Int]?) -> Void
   
   /// Provides the UI with a value to use on a VU meter
   public var inputVuLevels: AsyncStream<[Float]>

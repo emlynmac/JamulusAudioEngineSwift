@@ -36,23 +36,13 @@ extension JamulusAudioEngine {
       recordingAllowed: { true },
       requestRecordingPermission: { true },
       interfacesAvailable: availableInterfaceStream,
-      setAudioInputInterface: { selection, inputMapping in
+      setAudioInputInterface: { inInterface, inputMapping in
         audioConfig.inputChannelMapping = inputMapping
-        switch selection {
-        case .systemDefault:
-          audioConfig.configureDefaultInInterface()
-        case .specific(let interface):
-          audioConfig.activeInputDevice = interface
-        }
+        audioConfig.activeInputDevice = inInterface
       },
-      setAudioOutputInterface: { selection, outputMapping in
+      setAudioOutputInterface: { outInterface, outputMapping in
         audioConfig.outputChannelMapping = outputMapping
-        switch selection {
-        case .systemDefault:
-          audioConfig.configureDefaultOutInterface()
-        case .specific(let interface):
-          audioConfig.activeOutputDevice = interface
-        }
+        audioConfig.activeOutputDevice = outInterface
       },
       inputVuLevels: audioConfig.vuLevelStream,
       bufferState: audioConfig.bufferStateStream,

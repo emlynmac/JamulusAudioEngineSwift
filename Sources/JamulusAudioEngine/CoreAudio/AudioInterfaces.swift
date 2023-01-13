@@ -4,6 +4,57 @@ import Foundation
 
 #if os(macOS)
 
+fileprivate func createAudioInterface(
+  _ deviceId: AudioDeviceID
+) throws -> AudioInterface {
+  
+  // Enumerate
+  var inputChannels = [UInt32]()
+  var outputChannels = [UInt32]()
+  var propertySize = UInt32()
+  
+  var aopa = AudioObjectPropertyAddress(
+    mSelector: kAudioDevicePropertyDeviceName,
+    mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain
+  )
+  // Get device Name
+  let deviceName = try stringValueForAOPA(&aopa, forId: deviceId)
+  // Manufacturer
+  aopa.mSelector = kAudioDevicePropertyDeviceManufacturer
+  let manufacturer = try stringValueForAOPA(&aopa, forId: deviceId)
+  print(deviceName, manufacturer)
+  
+  // Capabilities
+  aopa.mSelector = kAudioDevicePropertyStreams
+  
+  aopa.mScope = kAudioDevicePropertyScopeInput
+  try throwIfError(
+    AudioObjectGetPropertyDataSize(deviceId, &aopa, 0, nil, &propertySize)
+  )
+  if propertySize > 0 {
+    aopa.mSelector = kAudioDevicePropertyStreamConfiguration
+    inputChannels = try channelArrayForAOPA(&aopa, forId: deviceId)
+  }
+  
+  aopa.mScope = kAudioDevicePropertyScopeOutput
+  try throwIfError(
+    AudioObjectGetPropertyDataSize(deviceId, &aopa, 0, nil, &propertySize)
+  )
+  if propertySize > 0 {
+    aopa.mSelector = kAudioDevicePropertyStreamConfiguration
+    outputChannels = try channelArrayForAOPA(&aopa, forId: deviceId)
+  }
+  var device = AudioInterface(
+    id: deviceId, name: deviceName,
+    inputChannelMap: inputChannels,
+    outputChannelMap: outputChannels
+  )
+  
+  device.notSupportedReason = try compatibilityCheck(device: &device)
+  return device
+}
+
 ///
 /// Retrieve a list of audio interfaces for use
 ///
@@ -11,6 +62,9 @@ func macOsAudioInterfaces() -> [AudioInterface] {
   var devices: [AudioInterface] = []
   
   do {
+    let defaultInDeviceId = try defaultAudioId(forInput: true)
+    let defaultOutDeviceId = try defaultAudioId(forInput: false)
+    
     // Figure out how many interfaces we have
     var aopa = AudioObjectPropertyAddress(
       mSelector: kAudioHardwarePropertyDevices,
@@ -24,50 +78,13 @@ func macOsAudioInterfaces() -> [AudioInterface] {
     )
     
     for deviceId in audioDeviceIds {
-      // Enumerate
-      var inputChannels = [UInt32]()
-      var outputChannels = [UInt32]()
-      var propertySize = UInt32()
-      
-      aopa = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDeviceName,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-      )
-      // Get device Name
-      let deviceName = try stringValueForAOPA(&aopa, forId: deviceId)
-      // Manufacturer
-      aopa.mSelector = kAudioDevicePropertyDeviceManufacturer
-      let manufacturer = try stringValueForAOPA(&aopa, forId: deviceId)
-      print(deviceName, manufacturer)
-      
-      // Capabilities
-      aopa.mSelector = kAudioDevicePropertyStreams
-      
-      aopa.mScope = kAudioDevicePropertyScopeInput
-      try throwIfError(
-        AudioObjectGetPropertyDataSize(deviceId, &aopa, 0, nil, &propertySize)
-      )
-      if propertySize > 0 {
-        aopa.mSelector = kAudioDevicePropertyStreamConfiguration
-        inputChannels = try channelArrayForAOPA(&aopa, forId: deviceId)
+      var device = try createAudioInterface(deviceId)
+      if device.inputChannelCount > 0 {
+        device.isSystemInDefault = deviceId == defaultInDeviceId
       }
-      
-      aopa.mScope = kAudioDevicePropertyScopeOutput
-      try throwIfError(
-        AudioObjectGetPropertyDataSize(deviceId, &aopa, 0, nil, &propertySize)
-      )
-      if propertySize > 0 {
-        aopa.mSelector = kAudioDevicePropertyStreamConfiguration
-        outputChannels = try channelArrayForAOPA(&aopa, forId: deviceId)
+      if device.outputChannelCount > 0 {
+        device.isSystemOutDefault = deviceId == defaultOutDeviceId
       }
-      var device = AudioInterface(
-        id: deviceId, name: deviceName,
-        inputChannelMap: inputChannels,
-        outputChannelMap: outputChannels
-      )
-      
-      device.notSupportedReason = try compatibilityCheck(device: &device)
       devices.append(device)
     }
   }
@@ -77,8 +94,8 @@ func macOsAudioInterfaces() -> [AudioInterface] {
   return devices
 }
 
-func defaultAudioDevice(forInput: Bool) throws -> AudioDeviceID {
-  var audioInputDevice: AudioDeviceID = 0
+func defaultAudioId(forInput: Bool) throws -> AudioDeviceID {
+  var deviceId: AudioDeviceID = 0
   var aopa = AudioObjectPropertyAddress(
     mSelector: forInput ? kAudioHardwarePropertyDefaultInputDevice :
       kAudioHardwarePropertyDefaultOutputDevice,
@@ -86,17 +103,21 @@ func defaultAudioDevice(forInput: Bool) throws -> AudioDeviceID {
     mElement: kAudioObjectPropertyElementMain
   )
 
-  var propertySize = UInt32(MemoryLayout.size(ofValue: audioInputDevice))
-  
+  var propertySize = UInt32(MemoryLayout.size(ofValue: deviceId))
   try throwIfError(
     AudioObjectGetPropertyData(
       AudioObjectID(kAudioObjectSystemObject),
       &aopa, 0,
       nil,
       &propertySize,
-      &audioInputDevice)
+      &deviceId)
   )
-  return audioInputDevice
+  return deviceId
+}
+
+func defaultAudioDevice(forInput: Bool) throws -> AudioInterface {
+  let deviceId = try defaultAudioId(forInput: forInput)
+  return try createAudioInterface(deviceId)
 }
 
 #endif

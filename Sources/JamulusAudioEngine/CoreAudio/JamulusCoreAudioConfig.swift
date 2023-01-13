@@ -14,13 +14,11 @@ final class JamulusCoreAudioConfig {
   var audioInterfaces: [AudioInterface] = []
   
   var defaultInInterface: AudioInterface? {
-    let defaultInputInterfaceId = try? defaultAudioDevice(forInput: true)
-    return audioInterfaces.first(where: { $0.id == defaultInputInterfaceId })
+    try? defaultAudioDevice(forInput: true)
   }
   
   var defaultOutInterface: AudioInterface? {
-    let defaultOutputInterfaceId = try? defaultAudioDevice(forInput: false)
-    return audioInterfaces.first(where: { $0.id == defaultOutputInterfaceId })
+     try? defaultAudioDevice(forInput: false)
   }
   
   var preferredInputDevice: AudioInterface?

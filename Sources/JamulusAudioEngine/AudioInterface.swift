@@ -65,7 +65,13 @@ extension AudioInterface {
     )
 
 #elseif os(iOS)
-    
+  return AudioInterface(
+    id: "Default",
+    name: "System Default",
+    inputChannelMap: [],
+    outputChannelMap: [],
+    isSystemOutDefault: true
+  )
 #endif
   }
   
@@ -82,7 +88,13 @@ extension AudioInterface {
     )
     
 #elseif os(iOS)
-    
+    return AudioInterface(
+      id: "Default",
+      name: "System Default",
+      inputChannelMap: [],
+      outputChannelMap: [],
+      isSystemInDefault: true
+    )
 #endif
 
   }

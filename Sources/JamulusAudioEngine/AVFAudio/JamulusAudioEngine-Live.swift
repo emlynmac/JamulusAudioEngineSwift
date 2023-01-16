@@ -264,21 +264,15 @@ func configureAvAudio(transProps: AudioTransportDetails) throws {
   try avSession.setPreferredIOBufferDuration(bufferDuration)
 }
 
-func setIosAudioInterface(interface: AudioInterface.InterfaceSelection,
+func setIosAudioInterface(interface: AudioInterface?,
                           session: AVAudioSession) throws {
-  switch interface {
-    
-  case .specific(let id):
-    guard let found = session.currentRoute.inputs
-      .first(where: { $0.portName == id }) else {
-      throw JamulusError.invalidAudioConfiguration
-    }
-    // Must be called with an active session
-    try session.setPreferredInput(found)
-    
-  case .systemDefault:
-    try session.setPreferredInput(nil)
+  
+  guard let found = session.currentRoute.inputs
+    .first(where: { $0.portName == interface?.id }) else {
+    throw JamulusError.invalidAudioConfiguration
   }
+  // Must be called with an active session
+  try session.setPreferredInput(found)
 }
 #endif
 

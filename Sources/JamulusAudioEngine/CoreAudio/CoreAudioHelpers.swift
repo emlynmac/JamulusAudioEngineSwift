@@ -8,33 +8,33 @@ func stringValueForAOPA(_ aopa: inout AudioObjectPropertyAddress,
   var stringSize: UInt32 = 0
   try throwIfError(AudioObjectGetPropertyDataSize(objId, &aopa, 0, nil, &stringSize))
   var cString = [CChar](repeating: 0, count: Int(stringSize))
-  try throwIfError( AudioObjectGetPropertyData(objId, &aopa, 0, nil, &stringSize, &cString))
+  try throwIfError(AudioObjectGetPropertyData(objId, &aopa, 0, nil, &stringSize, &cString))
   
   return String(cString: cString)
 }
 
 func channelArrayForAOPA(_ aopa: inout AudioObjectPropertyAddress,
                          forId objId: AudioDeviceID) throws -> [UInt32] {
-  var bufferList = AudioBufferList()
-  try objectFromAOPA(&aopa, forId: objId, object: &bufferList)
-  let channelCount = bufferList.mBuffers.mNumberChannels
-  return [UInt32](repeating: channelCount, count: Int(bufferList.mNumberBuffers))
+  let bufferList: AudioBufferList = try objectFromAOPA(&aopa, forId: objId)
+  return [UInt32](repeating: bufferList.mBuffers.mNumberChannels,
+                  count: Int(bufferList.mNumberBuffers))
 }
 
 func objectFromAOPA<T>(_ aopa: inout AudioObjectPropertyAddress,
-                       forId objId: AudioDeviceID,
-                       object: inout T) throws {
-  var propSize: UInt32 = UInt32(MemoryLayout<T>.size)
-#if DEBUG
-  let expectedSize = propSize
+                       forId objId: AudioDeviceID) throws -> T {
+  var propSize: UInt32 = 0
   try throwIfError(AudioObjectGetPropertyDataSize(objId, &aopa, 0, nil, &propSize))
-  if expectedSize != propSize {
-    print("Mismatch on size of property expectations: expected is \(expectedSize), actual is \(propSize)")
+  let mem = UnsafeMutablePointer<T>.allocate(capacity: Int(propSize))
+  defer {
+    mem.deallocate()
   }
-//  assert(expectedSize >= propSize, "Property size from CoreAudio differs from passed value - check the request")
-#endif
-  try throwIfError(AudioObjectGetPropertyData(objId, &aopa, 0, nil,
-                                              &propSize, &object))
+  try throwIfError(
+    AudioObjectGetPropertyData(
+      objId, &aopa, 0, nil,
+      &propSize, mem
+    )
+  )
+  return mem.pointee
 }
 
 func arrayFromAOPA<T>(_ aopa: inout AudioObjectPropertyAddress,
@@ -143,11 +143,7 @@ func validateStream(
   aopa.mSelector = kAudioStreamPropertyVirtualFormat
   aopa.mScope = kAudioObjectPropertyScopeGlobal
   
-  var streamFormat = AudioStreamBasicDescription()
-  try getStreamFormatFor(
-    id: id, withAopa: &aopa,
-    streamDescription: &streamFormat
-  )
+  let streamFormat = try getStreamFormatFor(id: id, withAopa: &aopa)
   let isInterleaved =
   (streamFormat.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
   var failReason: String?
@@ -164,12 +160,11 @@ func validateStream(
 
 func getStreamFormatFor(
   id: AudioStreamID,
-  withAopa aopa: inout AudioObjectPropertyAddress,
-  streamDescription: inout AudioStreamBasicDescription
-) throws {
+  withAopa aopa: inout AudioObjectPropertyAddress
+) throws -> AudioStreamBasicDescription {
   aopa.mSelector = kAudioStreamPropertyVirtualFormat
   aopa.mScope = kAudioObjectPropertyScopeGlobal
-  try objectFromAOPA(&aopa, forId: id, object: &streamDescription)
+  return try objectFromAOPA(&aopa, forId: id)
 }
 
 func setBufferFrameSize(for au: AudioUnit?, to size: inout UInt32) -> OSStatus {

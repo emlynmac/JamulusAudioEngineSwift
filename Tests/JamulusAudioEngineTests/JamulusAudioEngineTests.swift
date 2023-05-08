@@ -6,7 +6,7 @@ final class JamulusAudioEngineTests: XCTestCase {
   
   func test_core_audio_device_enumeration() async {
     
-    let coreAudioImplementation = await JamulusAudioEngine.coreAudio
+    let coreAudioImplementation = JamulusAudioEngine.coreAudio
     let availableInterfaces = await coreAudioImplementation
       .interfacesAvailable.first(where: { _ in true })
     
@@ -15,7 +15,7 @@ final class JamulusAudioEngineTests: XCTestCase {
   }
   
   func test_core_audio_device_selection_input() async {
-    let coreAudioImplementation = await JamulusAudioEngine.coreAudio
+    let coreAudioImplementation = JamulusAudioEngine.coreAudio
     XCTAssertNotNil(coreAudioImplementation)
     
     let availableInterfaces = await coreAudioImplementation
@@ -28,8 +28,8 @@ final class JamulusAudioEngineTests: XCTestCase {
     XCTAssert(inputs.count > 0)
     XCTAssert(outputs.count > 0)
     
-    await coreAudioImplementation.setAudioInputInterface(inputs.first!, [0,1])
-    await coreAudioImplementation.setAudioOutputInterface(outputs.first!, [0,1])
+    coreAudioImplementation.setAudioInputInterface(inputs.first!, [0,1])
+    coreAudioImplementation.setAudioOutputInterface(outputs.first!, [0,1])
   }
   
   func test_core_audio_device_selection_output() async {
@@ -37,7 +37,7 @@ final class JamulusAudioEngineTests: XCTestCase {
   }
   
   func test_audio_send() async {
-    let coreAudioImplementation = await JamulusAudioEngine.coreAudio
+    let coreAudioImplementation = JamulusAudioEngine.coreAudio
     XCTAssertNotNil(coreAudioImplementation)
     
     let availableInterfaces = await coreAudioImplementation
@@ -49,8 +49,8 @@ final class JamulusAudioEngineTests: XCTestCase {
     
     XCTAssert(inputs.count > 0)
     XCTAssert(outputs.count > 0)
-    await coreAudioImplementation.setAudioInputInterface(inputs.first!, [0,1])
-    await coreAudioImplementation.setAudioOutputInterface(outputs.first!, [0,1])
+    coreAudioImplementation.setAudioInputInterface(inputs.first!, [0,1])
+    coreAudioImplementation.setAudioOutputInterface(outputs.first!, [0,1])
     
     let packetSendExpectation = expectation(description: "Audio Packet Sent via callback")
     let transDetails = AudioTransportDetails.stereoNormal
@@ -59,10 +59,11 @@ final class JamulusAudioEngineTests: XCTestCase {
       packetSendExpectation.fulfill()
     }
     
-    let startError = await coreAudioImplementation.start(transDetails, audioSendFunc)
+    let startError = coreAudioImplementation.start(transDetails, audioSendFunc)
     XCTAssertNil(startError)
     
-    wait(for: [packetSendExpectation], timeout: 30)
-    _ = await coreAudioImplementation.stop()
+    // wait(for: [packetSendExpectation], timeout: 30)
+    await fulfillment(of: [packetSendExpectation], timeout: 30)
+    _ = coreAudioImplementation.stop()
   }
 }

@@ -14,28 +14,10 @@ extension JamulusAudioEngine {
     var audioConfig = JamulusCoreAudioConfig()
     let interfaceWatcher = AudioInterfaceProvider.live
     
-    let availableInterfaceStream = AsyncStream<[AudioInterface]> { c in
-      Task {
-        for await ifs in interfaceWatcher.interfaces {
-          audioConfig.audioInterfaces = ifs
-          
-          // If selected are empty, set default system
-          if audioConfig.activeInputDevice == nil {
-            audioConfig.activeInputDevice = audioConfig.defaultInInterface
-          }
-          if audioConfig.activeOutputDevice == nil {
-            audioConfig.activeOutputDevice = audioConfig.defaultOutInterface
-          }
-          
-          c.yield(ifs)
-        }
-      }
-    }
-    
     return JamulusAudioEngine(
       recordingAllowed: { true },
       requestRecordingPermission: { true },
-      interfacesAvailable: availableInterfaceStream,
+      interfacesAvailable: interfaceWatcher.interfaces,
       setAudioInputInterface: { inInterface, inputMapping in
         audioConfig.inputChannelMapping = inputMapping
         audioConfig.activeInputDevice = inInterface

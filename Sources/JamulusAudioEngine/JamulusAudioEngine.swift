@@ -5,7 +5,6 @@ import JamulusProtocol
 ///
 /// Audio handling for the app
 ///
-@MainActor
 public struct JamulusAudioEngine {
   
   /// Whether recording is permitted

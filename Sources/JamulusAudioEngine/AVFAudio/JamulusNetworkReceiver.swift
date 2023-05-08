@@ -57,8 +57,10 @@ final class JamulusNetworkReceiver {
         }
       }
       if let buffer = buffer {
-          output.assign(from: buffer.audioBufferList,
-                        count: Int(buffer.audioBufferList.pointee.mNumberBuffers))
+        output.update(
+          from: buffer.audioBufferList,
+          count: Int(buffer.audioBufferList.pointee.mNumberBuffers)
+        )
       } else {
         isSilence.pointee = true
       }

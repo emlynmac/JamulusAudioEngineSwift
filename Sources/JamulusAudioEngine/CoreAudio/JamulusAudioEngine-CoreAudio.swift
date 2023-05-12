@@ -1,10 +1,12 @@
 
 import AudioToolbox
+import AVFoundation
 import AVFAudio
 import CoreAudio
 import Foundation
 import JamulusProtocol
 import Opus
+
 
 #if os(macOS)
 extension JamulusAudioEngine {
@@ -15,8 +17,13 @@ extension JamulusAudioEngine {
     let interfaceWatcher = AudioInterfaceProvider.live
     
     return JamulusAudioEngine(
-      recordingAllowed: { true },
-      requestRecordingPermission: { true },
+      recordingAllowed: {
+        AVCaptureDevice.authorizationStatus(for: .audio) != .denied &&
+        AVCaptureDevice.authorizationStatus(for: .audio) != .restricted
+      },
+      requestRecordingPermission: {
+        await AVCaptureDevice.requestAccess(for: .audio)
+      },
       interfacesAvailable: interfaceWatcher.interfaces,
       setAudioInputInterface: { inInterface, inputMapping in
         audioConfig.inputChannelMapping = inputMapping
@@ -120,8 +127,8 @@ extension JamulusAudioEngine {
         audioConfig.inputLevels = [0,0]
         return nil
       },
-      setReverbLevel: { level in },
-      setReverbType: { reverbType in },
+      setReverbLevel: { level in print("REVERB NOT SUPPORTED YET!") },
+      setReverbType: { reverbType in print("REVERB NOT SUPPORTED YET!") },
       handleAudioFromNetwork: audioConfig.jitterBuffer.write(_:),
       setNetworkBufferSize: { newSize in
         audioConfig.jitterBuffer.resizeTo(

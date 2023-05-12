@@ -30,8 +30,6 @@ extension AudioInterfaceProvider {
   
   static var live: Self {
     
-    let observerTask: Task<Void, Never>?
-    
     var interfaceContinuation: AsyncStream<[AudioInterface]>.Continuation?
     let interfaces = AsyncStream<[AudioInterface]> { continuation in
       interfaceContinuation = continuation
@@ -41,7 +39,7 @@ extension AudioInterfaceProvider {
      reasonsContinuation = continuation
     }
     
-    observerTask = Task { [interfaceContinuation, reasonsContinuation] in
+    let observerTask = Task { [interfaceContinuation, reasonsContinuation] in
       for await notification in NotificationCenter.default.notifications(named: AVAudioSession.routeChangeNotification) {
         interfaceContinuation?.yield(
           AVAudioSession.sharedInstance()

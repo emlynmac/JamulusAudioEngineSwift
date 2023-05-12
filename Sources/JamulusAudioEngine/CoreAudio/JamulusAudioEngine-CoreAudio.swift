@@ -54,7 +54,11 @@ extension JamulusAudioEngine {
               &audioConfig.audioInputProcId
             )
           )
-          audioConfig.audioSendFunc = audioSender
+          audioConfig.audioSendFunc = { @Sendable packet in
+            Task {
+              await audioSender(packet)
+            }
+          }
           print("Created Input Callback")
           try throwIfError(
             AudioDeviceStart(inId, audioConfig.audioInputProcId)

@@ -152,7 +152,7 @@ final class JamulusNetworkSender {
   ///
   func compressAndSendAudio(buffer: AVAudioPCMBuffer,
                             transportProps: AudioTransportDetails,
-                            sendPacket: ((Data) -> Void)?) {
+                            sendPacket: ((Data) async -> Void)?) {
     let packetSize = Int(transportProps.opusPacketSize.rawValue)
     
     var encodedData: Data?
@@ -166,11 +166,15 @@ final class JamulusNetworkSender {
         compressedSize: packetSize)
     }
     if let data = encodedData {
-      sendPacket?(data)
+      Task {
+        await sendPacket?(data)
+      }
     } else {
       // Send an empty packet
       print("Failed to encode audio packet")
-      sendPacket?(Data(repeating: 0, count: packetSize))
+      Task {
+        await sendPacket?(Data(repeating: 0, count: packetSize))
+      }
     }
   }
 }

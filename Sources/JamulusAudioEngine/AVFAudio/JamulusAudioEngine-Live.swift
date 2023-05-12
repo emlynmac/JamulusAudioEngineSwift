@@ -162,7 +162,7 @@ extension JamulusAudioEngine {
         jitterBuffer.reset(
           blockSize: Int(audioTransProps.opusPacketSize.rawValue)
         )
-        sendAudioPacket = sendFunc
+        sendAudioPacket = { audioData in Task { await sendFunc(audioData) } }
         
         do {
 #if os(iOS)

@@ -33,7 +33,7 @@ public struct JamulusAudioEngine {
   ///  - parameter AudioTransportDetails Network layer compression
   ///  - parameter AudioSendCallback Function to call to send audio data
   ///  - returns Error if call fails
-  public var start: (AudioTransportDetails, @escaping ((Data) -> Void)) -> JamulusError?
+  public var start: (AudioTransportDetails, @escaping ((Data) async -> Void)) -> JamulusError?
   /// Stop the audio engine
   public var stop: () -> JamulusError?
   
@@ -41,7 +41,7 @@ public struct JamulusAudioEngine {
   public var setReverbType: (AVAudioUnitReverbPreset) -> Void
   
   /// Input for network Opus packet data
-  public var handleAudioFromNetwork: (Data) -> Void
+  public var handleAudioFromNetwork: @Sendable (Data) -> Void
   /// Set the network receive jitter buffer size in terms of number of packets
   public var setNetworkBufferSize: (Int) -> Void
   /// Set the engine transport details

@@ -81,6 +81,7 @@ final class NetworkBuffer {
     }
   }
   
+  @Sendable
   func write(_ data: Data) -> Void {
     guard !data.isEmpty else { return }
     

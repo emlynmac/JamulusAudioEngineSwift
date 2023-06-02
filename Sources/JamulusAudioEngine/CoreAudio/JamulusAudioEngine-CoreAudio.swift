@@ -16,6 +16,9 @@ extension JamulusAudioEngine {
     var audioConfig = JamulusCoreAudioConfig()
     let interfaceWatcher = AudioInterfaceProvider.live
     
+    audioConfig.configureDefaultInInterface()
+    audioConfig.configureDefaultOutInterface()
+    
     return JamulusAudioEngine(
       recordingAllowed: {
         AVCaptureDevice.authorizationStatus(for: .audio) != .denied &&

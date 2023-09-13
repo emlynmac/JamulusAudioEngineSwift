@@ -62,8 +62,8 @@ final class JamulusAudioEngineTests: XCTestCase {
     let startError = coreAudioImplementation.start(transDetails, audioSendFunc)
     XCTAssertNil(startError)
     
-    // wait(for: [packetSendExpectation], timeout: 30)
-    await fulfillment(of: [packetSendExpectation], timeout: 30)
+    wait(for: [packetSendExpectation], timeout: 30)
+//    await fulfillment(of: [packetSendExpectation], timeout: 30) // WHY IS THIS NOT FOUND?
     _ = coreAudioImplementation.stop()
   }
 }

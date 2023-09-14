@@ -338,37 +338,46 @@ func ioCallbackIn(id: AudioObjectID,
     )
     
     // Map channels to buffer, as we must have 2 up / down to network
-    var outChannel = 0
+
     
     // Audio in may be multiple discrete buffers or interleaved single buffer
     let audioBuf = inAudioBufPtr.unsafePointer[0]
     let channelCount = Int(audioBuf.mBuffers.mNumberChannels)
-    let frameCount = Int(audioBuf.mBuffers.mDataByteSize /
+    let sampleCount = Int(audioBuf.mBuffers.mDataByteSize /
                          UInt32(MemoryLayout<UInt32>.size))
-    let data = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(0)]
-      .mData?.assumingMemoryBound(to: Float32.self)
+    let frameCount = sampleCount / channelCount
     
-    while outChannel < 2 {
-      if inputFormat.isInterleaved {
-        let outPtr = buffer!.floatChannelData!.pointee
+    // Processed frames
+    var frames = 0
+    let outPtr = buffer!.floatChannelData!.pointee
+    
+    if channelCount > 1 { // Have interleaved incoming data in the audio callback
+      let data = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(0)]
+        .mData?.assumingMemoryBound(to: Float32.self)
+      for frameIdx in Swift.stride(from: 0, to: sampleCount, by: channelCount) {
+        let leftOffset = frameIdx + channelMap[0]
+        let rightOffset = frameIdx + channelMap[1]
+        let leftSample = data![leftOffset]
+        let rightSample = data![rightOffset]
         
-        for sampleIdx in Swift.stride(from: 0, to: frameCount, by: channelCount) {
-          let leftSample = data![sampleIdx + channelMap[outChannel]]
-          let rightSample = data![sampleIdx + channelMap[outChannel+1]]
-          
-          outPtr[sampleIdx] = leftSample
-          outPtr[sampleIdx + 1] = rightSample
-        }
-        outChannel = 2
-      } else {
-        let outPtr = buffer!.floatChannelData![outChannel]
-        for frame in 0..<Int(frameCount) {
-          outPtr[frame] = data![frame]
-        }
-        outChannel += 1
+        outPtr[frames] = leftSample
+        outPtr[frames + 1] = rightSample
+        frames += 2
+      }
+      
+    } else {  // Should have multiple buffers, one for each channel
+      let leftSource = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(channelMap[0])]
+        .mData?.assumingMemoryBound(to: Float32.self)
+      let rightSource = inAudioBufPtr[UnsafeMutableAudioBufferListPointer.Index(channelMap[1])]
+        .mData?.assumingMemoryBound(to: Float32.self)
+      
+      for frame in 0..<Int(frameCount) {
+        outPtr[frames] = leftSource![frame]
+        outPtr[frames + 1] = rightSource![frame]
+        frames += 2
       }
     }
-    buffer?.frameLength = AVAudioFrameCount(frameCount*2)
+    buffer?.frameLength = AVAudioFrameCount(frames)
     
     // Update the VU meter, but only at an appropriate rate.
     let sampleTimestamp = timestamp.pointee.mSampleTime

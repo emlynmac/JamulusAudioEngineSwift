@@ -95,7 +95,7 @@ final class JamulusNetworkReceiver {
                 
                 if let err = error { throw JamulusError.avAudioError(err) }
                 
-                output.update(
+                output.assign(
                   from: convertedBuffer.audioBufferList,
                   count: Int(convertedBuffer.audioBufferList.pointee.mNumberBuffers)
                 )
@@ -106,7 +106,7 @@ final class JamulusNetworkReceiver {
               
             }
           } else {
-            output.update(
+            output.assign(
               from: buffer.audioBufferList,
               count: Int(buffer.audioBufferList.pointee.mNumberBuffers)
             )

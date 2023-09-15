@@ -65,10 +65,13 @@ extension JamulusAudioEngine {
     }
     
     var sendAudioPacket: ((Data) -> Void)?
-   
+#if os(iOS)
     var inputInterface: AudioInterface? = AVAudioSession.sharedInstance().availableInputs?
       .map { AudioInterface.fromAvPortDesc(desc: $0) }
       .first
+#else
+      var inputInterface: AudioInterface?
+#endif
     var inputChannelMapping: [Int]?
     var outputChannelMapping: [Int]?
 

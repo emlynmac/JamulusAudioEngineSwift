@@ -7,11 +7,7 @@ import Foundation
 ///
 final class NetworkBuffer {
   
-  public var state: BufferState = .empty {
-    didSet {
-      print("BufferState: \(state)")
-    }
-  }
+  public var state: BufferState = .empty
   
   private let queue = DispatchQueue(label: "Receive Buffer Queue",
                                     qos: .userInteractive)

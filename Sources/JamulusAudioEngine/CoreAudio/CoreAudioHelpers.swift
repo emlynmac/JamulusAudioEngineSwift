@@ -63,7 +63,7 @@ func throwIfError(_ err: OSStatus) throws {
 func compatibilityCheck(device: inout AudioInterface) throws -> String? {
   var incompatibleReason: String?
   
-  // Check sample rate support, we want 48kHz
+  // Check sample rate support, we want 48kHz ideally
   var propertySize = UInt32(MemoryLayout<Float64>.size)
   var inputSampleRate = Float64()
   var aopa = AudioObjectPropertyAddress(
@@ -77,6 +77,7 @@ func compatibilityCheck(device: inout AudioInterface) throws -> String? {
     )
   )
   if inputSampleRate != sampleRate48kHz {
+    device.activeSampleRate = inputSampleRate
     inputSampleRate = sampleRate48kHz
     
     do {
@@ -87,8 +88,6 @@ func compatibilityCheck(device: inout AudioInterface) throws -> String? {
       )
     } catch {
       incompatibleReason = "48kHz Sample Rate Not Supported!"
-      device.activeSampleRate = inputSampleRate
-      return incompatibleReason
     }
   }
   

@@ -255,7 +255,7 @@ func ioCallbackOut(id: AudioObjectID,
     // Convert to output hardware requirements
     if let converter = audioConfig.outputConverter,
        let convertedBuffer = AVAudioPCMBuffer(
-        pcmFormat: outputFormat,
+        pcmFormat: converter.outputFormat,
         frameCapacity: UInt32(audioTransProps.frameSize)
        ) {
       var error: NSError? = nil
@@ -284,6 +284,7 @@ func ioCallbackOut(id: AudioObjectID,
       outAudioBufPtr[0].mData!.assumingMemoryBound(to: Float32.self) :
       outAudioBufPtr[channelMap[1]].mData!.assumingMemoryBound(to: Float32.self)
       
+        let scaleFactor = Int(outAudioBufPtr[0].mNumberChannels / buffer.format.channelCount)
       for sampleIdx in Swift.stride(
         from: 0, to: Int(buffer.frameLength*opus48kFormat.channelCount),
         by: Int(opus48kFormat.channelCount)
@@ -292,8 +293,8 @@ func ioCallbackOut(id: AudioObjectID,
         let rightSample = sourceData[sampleIdx+1]
         
         if outputFormat.isInterleaved {
-          leftBuf[sampleIdx+channelMap[0]] = leftSample
-          rightBuf[sampleIdx+channelMap[1]] = rightSample
+          leftBuf[sampleIdx*scaleFactor+channelMap[0]] = leftSample
+          rightBuf[sampleIdx*scaleFactor+channelMap[1]] = rightSample
         } else {
           leftBuf[sampleIdx] = leftSample
           rightBuf[sampleIdx] = rightSample

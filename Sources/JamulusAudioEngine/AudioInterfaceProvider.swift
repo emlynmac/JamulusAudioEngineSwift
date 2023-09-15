@@ -28,7 +28,9 @@ extension AudioInterfaceProvider {
     return nil
   }
   
-  static var live: Self {
+  private static var observerTask: Task<Void, Error>?
+  
+  static var avfAudio: Self {
     
     var interfaceContinuation: AsyncStream<[AudioInterface]>.Continuation?
     let interfaces = AsyncStream<[AudioInterface]> { continuation in
@@ -39,12 +41,15 @@ extension AudioInterfaceProvider {
      reasonsContinuation = continuation
     }
     
-    let observerTask = Task { [interfaceContinuation, reasonsContinuation] in
-      for await notification in NotificationCenter.default.notifications(named: AVAudioSession.routeChangeNotification) {
+    observerTask = Task { [interfaceContinuation, reasonsContinuation] in
+      for await notification in NotificationCenter.default.notifications(
+        named: AVAudioSession.routeChangeNotification
+      ) {
         interfaceContinuation?.yield(
           AVAudioSession.sharedInstance()
             .currentRoute
-            .inputs.map { AudioInterface.fromAvPortDesc(desc: $0) }
+            .inputs
+            .map { AudioInterface.fromAvPortDesc(desc: $0) }
         )
         
         if let reason = reasonForChange(notification: notification) {
@@ -52,7 +57,13 @@ extension AudioInterfaceProvider {
         }
       }
     }
-    // TODO: Cancel the observerTask
+    // Send out current statey
+    interfaceContinuation?.yield(
+      AVAudioSession.sharedInstance()
+        .currentRoute
+        .inputs
+        .map { AudioInterface.fromAvPortDesc(desc: $0) }
+    )
     
     return .init(
       interfaces: interfaces,
@@ -60,7 +71,7 @@ extension AudioInterfaceProvider {
     )
   }
 #elseif os(macOS)
-  static var live: Self {
+  static var avfAudio: Self {
     var continuation: AsyncStream<[AudioInterface]>.Continuation?
     
     // TODO: update after signal from system

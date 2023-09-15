@@ -14,7 +14,7 @@ extension JamulusAudioEngine {
   public static var coreAudio: Self {
         
     var audioConfig = JamulusCoreAudioConfig()
-    let interfaceWatcher = AudioInterfaceProvider.live
+    let interfaceWatcher = AudioInterfaceProvider.avfAudio
     
     audioConfig.configureDefaultInInterface()
     audioConfig.configureDefaultOutInterface()

@@ -6,7 +6,7 @@ import Opus
 
 extension JamulusAudioEngine {
   
-  public static var live: Self {
+  public static var avfAudio: Self {
     
     /// The opus instance supporting 128 frame encoding/decoding
     let opus: Opus.Custom! = try? Opus.Custom(
@@ -29,7 +29,11 @@ extension JamulusAudioEngine {
     let avAudSession = AVAudioSession.sharedInstance()
     initAvFoundation()
 #endif
-    let audioHardwarePublisher = AudioInterfaceProvider.live
+    let audioInterfacesProvider = AudioInterfaceProvider.avfAudio
+//    var interfacesAvailabelContinuation: AsyncStream<[AudioInterface]>.Continuation?
+//    let interfacesAvailableStream = AsyncStream<[AudioInterface]> { c in
+//      interfacesAvailabelContinuation = c
+//    }
     
     var vuContinuation: AsyncStream<[Float]>.Continuation?
     let vuLevelStream = AsyncStream<[Float]> { continuation in
@@ -62,13 +66,15 @@ extension JamulusAudioEngine {
     
     var sendAudioPacket: ((Data) -> Void)?
    
-    var inputInterface: AudioInterface? = .defaultInInterface
+    var inputInterface: AudioInterface? = AVAudioSession.sharedInstance().availableInputs?
+      .map { AudioInterface.fromAvPortDesc(desc: $0) }
+      .first
     var inputChannelMapping: [Int]?
-    var outputInterface: AudioInterface? = .defaultOutInterface
     var outputChannelMapping: [Int]?
 
     
     let networkAudioSource = JamulusNetworkReceiver(
+      outputFormat: avEngine.mainMixerNode.inputFormat(forBus: 0),
       transportDetails: audioTransProps,
       opus: opus,
       opus64: opus64,
@@ -117,17 +123,6 @@ extension JamulusAudioEngine {
                      format: nil)
     avEngine.prepare()
     
-//    var cancellables = Set<AnyCancellable>()
-//    audioHardwarePublisher.reasonPublisher
-//      .sink(
-//        receiveValue: { reason in
-//          print(reason)
-////          networkAudioSource.outputFormat = avEngine.outputNode.inputFormat(forBus: 0)
-//        }
-//      )
-//      .store(in: &cancellables)
-    
-    
     return JamulusAudioEngine(
       recordingAllowed: {
 #if os(iOS)
@@ -147,9 +142,15 @@ extension JamulusAudioEngine {
         return true
 #endif
       },
-      interfacesAvailable: audioHardwarePublisher.interfaces,
-      setAudioInputInterface: { inputInterface = $0; inputChannelMapping = $1 },
-      setAudioOutputInterface: { outputInterface = $0; outputChannelMapping = $1 },
+      interfacesAvailable: audioInterfacesProvider.interfaces,
+      setAudioInputInterface: {
+        inputInterface = $0;
+        inputChannelMapping = $1
+      },
+      setAudioOutputInterface: {
+//        outputInterface = $0;
+        outputChannelMapping = $1
+      },
       inputVuLevels: vuLevelStream,
       bufferState: bufferStateStream,
       muteInput: { networkAudioSender.inputMuted = $0 },
@@ -166,7 +167,10 @@ extension JamulusAudioEngine {
         do {
 #if os(iOS)
           try avAudSession.setActive(true, options: .notifyOthersOnDeactivation)
-          try setIosAudioInterface(interface: inputInterface, session: avAudSession)
+          try setIosAudioInInterface(
+            interface: inputInterface,
+            session: avAudSession
+          )
           try configureAvAudio(transProps: audioTransProps)
           print("Pref rate: \(avAudSession.preferredSampleRate), actual: \(avAudSession.sampleRate)")
 #elseif os(macOS)
@@ -263,13 +267,13 @@ func configureAvAudio(transProps: AudioTransportDetails) throws {
   try avSession.setPreferredIOBufferDuration(bufferDuration)
 }
 
-func setIosAudioInterface(interface: AudioInterface?,
-                          session: AVAudioSession) throws {
-  
-  guard let found = session.currentRoute.inputs
-    .first(where: { $0.portName == interface?.id }) else {
-    throw JamulusError.invalidAudioConfiguration
-  }
+func setIosAudioInInterface(interface: AudioInterface?,
+                            session: AVAudioSession) throws {
+  let found = session.currentRoute.inputs.first
+//  guard let found = session.currentRoute.inputs
+//    .first(where: { $0.portName == interface?.id }) else {
+//    throw JamulusError.invalidAudioConfiguration
+//  }
   // Must be called with an active session
   try session.setPreferredInput(found)
 }

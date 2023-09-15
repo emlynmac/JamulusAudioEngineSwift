@@ -83,7 +83,8 @@ public extension JamulusAudioEngine {
       setReverbType: { _ in },
       handleAudioFromNetwork: { _ in },
       setNetworkBufferSize: { _ in },
-      setTransportProperties: { details in nil })
+      setTransportProperties: { details in nil }
+    )
   }
 }
 

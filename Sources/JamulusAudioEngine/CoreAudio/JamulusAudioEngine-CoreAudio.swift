@@ -284,10 +284,11 @@ func ioCallbackOut(id: AudioObjectID,
       outAudioBufPtr[0].mData!.assumingMemoryBound(to: Float32.self) :
       outAudioBufPtr[channelMap[1]].mData!.assumingMemoryBound(to: Float32.self)
       
-        let scaleFactor = Int(outAudioBufPtr[0].mNumberChannels / buffer.format.channelCount)
+      let scaleFactor = Int(outAudioBufPtr[0].mNumberChannels / buffer.format.channelCount)
+      
       for sampleIdx in Swift.stride(
-        from: 0, to: Int(buffer.frameLength*opus48kFormat.channelCount),
-        by: Int(opus48kFormat.channelCount)
+        from: 0, to: Int(buffer.frameLength*buffer.format.channelCount),
+        by: Int(buffer.format.channelCount)
       ) {
         let leftSample = sourceData[sampleIdx]
         let rightSample = sourceData[sampleIdx+1]
